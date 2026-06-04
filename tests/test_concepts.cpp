@@ -8,11 +8,11 @@ using namespace eoslab_test;
 namespace ge = glis::eos;
 
 // A type that does not model EquationOfState at all.
-namespace  {
+namespace {
 struct NotAnEoS {
-    static int foo()  { return 0; }
+    static int foo() { return 0; }
 };
-}
+} // namespace
 
 // Compile-time verification of the concept hierarchy. If any of these fire, the
 // concepts in concepts.hpp (or the test models) regressed.
@@ -32,7 +32,6 @@ static_assert(!ge::ResidualEoS<NotAnEoS>);
 // The dynamic-extent variants also model the concepts.
 static_assert(ge::IdealEoS<IdealGasTestModel<3>>);
 static_assert(ge::ResidualEoS<VirialResidualTestModel<3>>);
-
 
 int main()
 {
