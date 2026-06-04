@@ -10,9 +10,11 @@
     {
       "name": "debug",
       "displayName": "Debug",
+      "description": "Debug build. Uses -O1 (not -O0) because Enzyme runs inside the optimization pipeline and produces incorrect derivatives (especially in reverse mode) without it. -O1 -g keeps debug info and AddressSanitizer stack traces.",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O1 -g",
         "ENABLE_SANITIZERS": "ON"
       }
     },
