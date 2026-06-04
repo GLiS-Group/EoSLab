@@ -1,6 +1,6 @@
 #include "derivative_test_harness.hpp"
 #include "eos_test_models.hpp"
-#include "eoslab/core_calculations.hpp"
+#include "eoslab/core/core_calculations.hpp"
 
 #include <array>
 #include <boost/ut.hpp>

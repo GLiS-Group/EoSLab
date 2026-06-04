@@ -2,14 +2,14 @@
 
 This guide explains how to add a new equation-of-state (EoS) model to EoSLab so
 that it works with the thermodynamic property routines in
-[`core_calculations.hpp`](../include/eoslab/core_calculations.hpp).
+[`core_calculations.hpp`](../include/eoslab/core/core_calculations.hpp).
 
 ## 1. The big picture
 
 A complete equation of state in this library is a **pair**: one *ideal*
 contribution and one *residual* (departure) contribution, joined by
 `glis::eos::EoS<Ideal, Residual>` (see
-[`eos_pair.hpp`](../include/eoslab/eos_pair.hpp)).
+[`eos_pair.hpp`](../include/eoslab/core/eos_pair.hpp)).
 
 $$
 \text{total Helmholtz energy} = a_\text{total} = a_\text{ideal} + a_\text{residual}
@@ -39,7 +39,7 @@ only implement the Helmholtz energy, and the library differentiates it.
 ## 2. The interface every model must provide
 
 A model must satisfy the `glis::eos::EquationOfState` concept
-([`concepts.hpp`](../include/eoslab/concepts.hpp)), i.e. expose these **const**
+([`concepts.hpp`](../include/eoslab/core/concepts.hpp)), i.e. expose these **const**
 members. Template them on the floating-point type — the library instantiates
 them with `double` and the test-suite also uses `long double`.
 
@@ -75,7 +75,7 @@ std::size_t size() const;   // (provided for you by BaseEoS<N>)
 > Implement both from a single definition so this relationship holds exactly.
 
 The easiest way to get `size()` (and the component-count plumbing) is to derive
-from `glis::eos::BaseEoS<N>` ([`eos_base.hpp`](../include/eoslab/eos_base.hpp)).
+from `glis::eos::BaseEoS<N>` ([`eos_base.hpp`](../include/eoslab/core/eos_base.hpp)).
 Use a concrete `N` for a compile-time component count, or `std::dynamic_extent`
 for a runtime one.
 
@@ -121,7 +121,7 @@ turns a subtle interface mistake (wrong signature, missing `const`, forgetting
 to derive from `BaseIdealEoS`, …) into an immediate, readable compile error:
 
 ```cpp
-#include "eoslab/concepts.hpp"
+#include "eoslab/core/concepts.hpp"
 
 template<std::size_t N>
 class MyIdealModel : public glis::eos::BaseIdealEoS, public glis::eos::BaseEoS<N> {
@@ -145,7 +145,7 @@ worked examples (a constant-`c_v` ideal gas and a truncated-virial residual), an
 ## 6. Use it
 
 ```cpp
-#include "eoslab/core_calculations.hpp"
+#include "eoslab/core/core_calculations.hpp"
 
 glis::eos::EoS eos{MyIdealModel<2>{...}, MyResidualModel<2>{...}};
 

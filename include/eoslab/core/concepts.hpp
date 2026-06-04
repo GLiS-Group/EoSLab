@@ -4,7 +4,7 @@
  * @brief Concepts that define the interface every equation-of-state model must
  *        provide, and the ideal/residual classification.
  */
-#include "eoslab/eos_base.hpp"
+#include "eoslab/core/eos_base.hpp"
 
 #include <concepts>
 #include <cstddef>

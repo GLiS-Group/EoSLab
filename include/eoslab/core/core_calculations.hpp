@@ -19,9 +19,9 @@
  * - `rho_i` partial molar concentrations [mol/m^3]
  * - `R`     gas constant [J/(mol K)]
  */
-#include "eoslab/concepts.hpp"
-#include "eoslab/eos_pair.hpp"
-#include "eoslab/numbers.hpp"
+#include "eoslab/core/concepts.hpp"
+#include "eoslab/core/eos_pair.hpp"
+#include "eoslab/core/numbers.hpp"
 
 #include <algorithm>
 #include <cassert>

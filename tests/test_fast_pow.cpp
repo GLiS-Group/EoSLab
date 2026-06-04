@@ -1,4 +1,4 @@
-#include "eoslab/core_calculations.hpp"
+#include "eoslab/core/core_calculations.hpp"
 
 #include <boost/ut.hpp>
 #include <cmath>
