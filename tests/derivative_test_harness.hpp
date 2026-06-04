@@ -36,7 +36,7 @@
 namespace eoslab_test {
 
 // 4th-order central first derivative of a unary callable, in long double.
-template<class F> [[nodiscard]] long double central_diff(F&& f, long double x, long double h)
+[[nodiscard]] long double central_diff(auto f, long double x, long double h)
 {
     return (-f(x + (2 * h)) + (8 * f(x + h)) - (8 * f(x - h)) + f(x - (2 * h))) / (12 * h);
 }
