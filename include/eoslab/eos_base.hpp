@@ -34,7 +34,7 @@ public:
 
     /**
      * @brief Number of chemical components.
-     * @return @p N 
+     * @return @p N
      */
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 };
