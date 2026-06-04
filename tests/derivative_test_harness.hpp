@@ -23,7 +23,7 @@
 //   c   [mol/m^3], x [-], T [K], pressure [Pa], energies [J/mol],
 //   entropy / heat capacities [J/mol/K], chemical potential [J/mol].
 //
-#include "eoslab/core_calculations.hpp"
+#include "eoslab/core/core_calculations.hpp"
 
 #include <array>
 #include <boost/ut.hpp>

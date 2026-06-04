@@ -1,6 +1,6 @@
 #pragma once
 
-#include "eoslab/concepts.hpp"
+#include "eoslab/core/concepts.hpp"
 
 #include <span>
 

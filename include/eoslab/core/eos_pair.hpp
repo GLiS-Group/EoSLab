@@ -5,7 +5,7 @@
  * @brief Couples an ideal and a residual model into a single equation of state.
  */
 
-#include "eoslab/concepts.hpp"
+#include "eoslab/core/concepts.hpp"
 namespace glis::eos {
 
 /**

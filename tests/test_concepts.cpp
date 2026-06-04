@@ -1,5 +1,5 @@
 #include "eos_test_models.hpp"
-#include "eoslab/concepts.hpp"
+#include "eoslab/core/concepts.hpp"
 
 #include <boost/ut.hpp>
 

@@ -1,4 +1,4 @@
-#include "eoslab/xlnx.hpp"
+#include "eoslab/core/xlnx.hpp"
 
 #include <algorithm>
 #include <array>

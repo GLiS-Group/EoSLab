@@ -18,9 +18,9 @@
 //   The two are consistent:  Psi(rho,T) = c * a(c, x, T)  with c = sum rho_i,
 //   x_i = rho_i / c.
 //
-#include "eoslab/eos_base.hpp"
-#include "eoslab/eos_pair.hpp"
-#include "eoslab/numbers.hpp"
+#include "eoslab/core/eos_base.hpp"
+#include "eoslab/core/eos_pair.hpp"
+#include "eoslab/core/numbers.hpp"
 
 #include <array>
 #include <cmath>
