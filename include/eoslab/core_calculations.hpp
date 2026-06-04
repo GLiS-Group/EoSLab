@@ -29,7 +29,6 @@
 #include <concepts>
 #include <cstddef>
 #include <span>
-#include <vector>
 
 // NOLINTBEGIN
 /// @cond INTERNAL
@@ -39,7 +38,6 @@ inline int enzyme_dup;
 inline int enzyme_dupnoneed;
 inline int enzyme_out;
 inline int enzyme_const;
-
 
 template<typename return_type, typename... T> return_type __enzyme_fwddiff(void*, T...);
 
@@ -229,17 +227,29 @@ template<int i, EquationOfState EoS, std::floating_point Number>
  *          zero it beforehand; calling repeatedly with the same buffer sums the
  *          contributions (this is how the ideal and residual parts are combined).
  *
+ * @note Neither scratch buffer needs to be initialised by the caller.
+ *       @p scratch is a pure output of detail::calc_Psi (fully overwritten by
+ *       `calc_partial_helmholtz` before it is read; its contents on entry --
+ *       even NaN/Inf -- do not affect the result). @p dscratch (the Enzyme
+ *       shadow) MUST start at zero for the reverse pass, so it is zeroed
+ *       internally on every call.
+ *
  * @tparam i        Derivative order; must be 1.
  * @param  eos      A single-contribution model (ideal or residual).
  * @param  rho_i    Partial molar concentrations [mol/m^3].
  * @param  T        Temperature [K].
  * @param  dPsi_drho Output gradient (length `eos.size()`), accumulated [J/mol].
- * @param  scratch  Scratch buffer of length `eos.size()` [J/m^3]; receives the
- *                  per-component Helmholtz density from detail::calc_Psi.
+ * @param  scratch  Caller-allocated scratch of length `eos.size()` [J/m^3];
+ *                  receives the per-component Helmholtz density from
+ *                  detail::calc_Psi. Contents on entry are irrelevant.
+ * @param  dscratch Caller-allocated scratch of length `eos.size()`; used as the
+ *                  Enzyme shadow of @p scratch. Contents on entry are irrelevant
+ *                  (zeroed internally).
  */
 template<int i, EquationOfState EoS, std::floating_point Number>
 void calc_dPsi_drhoi(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, const Number T,
-                     Number* GLIS_EOS_RESTRICT dPsi_drho, Number* GLIS_EOS_RESTRICT scratch)
+                     Number* GLIS_EOS_RESTRICT dPsi_drho, Number* GLIS_EOS_RESTRICT scratch,
+                     Number* GLIS_EOS_RESTRICT dscratch)
 {
     // TODO: only implemented for 1 derivative because higher order would require tensors!
     static_assert(i > 0, "The template parameter `i` must be positive. It represents the number of derivatives with "
@@ -253,12 +263,16 @@ void calc_dPsi_drhoi(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, cons
         // active inputs `rho_i`, the buffer is an *active* argument and must be
         // shadowed (enzyme_dup) rather than marked const -- otherwise Enzyme
         // drops the dependence through the buffer and returns a zero gradient.
-        // The shadow buffer must be zero initialised.
-        // TODO: this allocates per call; it could be hoisted into a caller
-        //       provided scratch buffer if it shows up in profiles.
-        std::vector<Number> dscratch(eos.size(), Number{0});
+        //
+        // The shadow `dscratch` MUST start zeroed: the reverse pass accumulates
+        // into it, and a non-zero (or NaN/Inf) value here corrupts the gradient
+        // (verified -- garbage produces ~1e303 / NaN chemical potentials). The
+        // primal `scratch` needs no initialisation: calc_partial_helmholtz
+        // overwrites it before it is read. Both buffers are caller-provided to
+        // avoid a per-call allocation.
+        std::fill(dscratch, dscratch + eos.size(), Number{0});
         __enzyme_autodiff<Number>((void*)calc_Psi<EoS, Number>, enzyme_const, &eos, enzyme_dup, rho_i, dPsi_drho,
-                                  enzyme_const, T, enzyme_dup, scratch, dscratch.data());
+                                  enzyme_const, T, enzyme_dup, scratch, dscratch);
         return;
     }
     else {
@@ -548,25 +562,32 @@ Number calc_sound_speed_squared(const EoS<Ideal, Residual>& eos, const Number c,
  * @param rho_i Partial molar concentrations [mol/m^3].
  * @param T   Temperature [K].
  * @param[out] chemical_potential Output chemical potentials [J/mol]. Overwritten (zeroed then filled).
- * @param scratch Scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch1 Caller-allocated scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch2 Caller-allocated scratch buffer of length `eos.size()` (Enzyme shadow).
+ * @note Neither @p scratch1 nor @p scratch2 needs to be initialised by the
+ *       caller; both are overwritten/zeroed internally, so you do not need to
+ *       preprocess them before calling this function.
  * @pre `rho_i.size() == eos.size()`
  * @pre `chemical_potential.size() == eos.size()`
- * @pre `scratch.size() == eos.size()`
+ * @pre `scratch1.size() == eos.size()`
+ * @pre `scratch2.size() == eos.size()`
  */
 template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
 void calc_chemical_potential(const EoS<Ideal, Residual>& eos, std::span<const Number, N> rho_i, const Number T,
-                             std::span<Number, N> chemical_potential, std::span<Number, N> scratch)
+                             std::span<Number, N> chemical_potential, std::span<Number, N> scratch1,
+                             std::span<Number, N> scratch2)
 {
-    // TODO: do I need to zero scratch?
-    // TODO: add second scratch do avoid allocation in calc_dPsi_drhoi
     assert(rho_i.size() == eos.size());
     assert(chemical_potential.size() == eos.size());
-    assert(scratch.size() == eos.size());
+    assert(scratch1.size() == eos.size());
+    assert(scratch2.size() == eos.size());
     // Enzyme reverse mode accumulates into the output, so it must start zeroed;
     // the ideal and residual contributions are then summed in place.
     std::fill(chemical_potential.begin(), chemical_potential.end(), Number{0});
-    detail::calc_dPsi_drhoi<1>(eos.ideal(), rho_i.data(), T, chemical_potential.data(), scratch.data());
-    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, chemical_potential.data(), scratch.data());
+    detail::calc_dPsi_drhoi<1>(eos.ideal(), rho_i.data(), T, chemical_potential.data(), scratch1.data(),
+                               scratch2.data());
+    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, chemical_potential.data(), scratch1.data(),
+                               scratch2.data());
 }
 
 /**
@@ -579,12 +600,16 @@ void calc_chemical_potential(const EoS<Ideal, Residual>& eos, std::span<const Nu
  * @param rho_i Partial molar concentrations [mol/m^3] (should equal `x*c`).
  * @param[out] log_fug_coeff Output @f$\ln\varphi_i@f$ [-] (length `eos.size()`).
  *             Overwritten (zeroed then filled).
- * @param scratch Scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch1 Caller-allocated scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch2 Caller-allocated scratch buffer of length `eos.size()` (Enzyme shadow).
+ * @note Neither @p scratch1 nor @p scratch2 needs to be initialised by the
+ *       caller; both are overwritten/zeroed internally, so you do not need to
+ *       preprocess them before calling this function.
  */
 template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
 void calc_log_fugacity_coeff(const EoS<Ideal, Residual>& eos, const Number c, std::span<const Number, N> x,
                              const Number T, const std::span<const Number, N> rho_i, std::span<Number, N> log_fug_coeff,
-                             std::span<Number, N> scratch)
+                             std::span<Number, N> scratch1, std::span<Number, N> scratch2)
 {
     // TODO: assertions on span
     // FIXME: In this whole file, if N != std::dynamic_extent, then I can do the size checks at compile time!
@@ -594,7 +619,7 @@ void calc_log_fugacity_coeff(const EoS<Ideal, Residual>& eos, const Number c, st
 
     // Enzyme reverse mode accumulates into the output, so zero it first.
     std::fill(log_fug_coeff.begin(), log_fug_coeff.end(), Number{0});
-    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, log_fug_coeff.data(), scratch.data());
+    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, log_fug_coeff.data(), scratch1.data(), scratch2.data());
     constexpr Number R = ideal_gas_constant<Number>;
     const Number invRT = Number{1} / (R * T);
     for (auto& ln_phi_i : log_fug_coeff) {
@@ -610,16 +635,20 @@ void calc_log_fugacity_coeff(const EoS<Ideal, Residual>& eos, const Number c, st
  * @param T   Temperature [K].
  * @param[out] fugacity Output fugacities [Pa] (length `eos.size()`).
  *             Overwritten (zeroed then filled).
- * @param scratch Scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch1 Caller-allocated scratch buffer of length `eos.size()` [J/m^3].
+ * @param scratch2 Caller-allocated scratch buffer of length `eos.size()` (Enzyme shadow).
+ * @note Neither @p scratch1 nor @p scratch2 needs to be initialised by the
+ *       caller; both are overwritten/zeroed internally, so you do not need to
+ *       preprocess them before calling this function.
  */
 template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
 void calc_fugacity(const EoS<Ideal, Residual>& eos, std::span<const Number, N> rho_i, const Number T,
-                   std::span<Number, N> fugacity, std::span<Number, N> scratch)
+                   std::span<Number, N> fugacity, std::span<Number, N> scratch1, std::span<Number, N> scratch2)
 {
     // Enzyme reverse mode accumulates into the output, so zero it first. After
     // the call `fugacity[idx]` holds the residual chemical potential mu_i^res.
     std::fill(fugacity.begin(), fugacity.end(), Number{0});
-    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, fugacity.data(), scratch.data());
+    detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, fugacity.data(), scratch1.data(), scratch2.data());
     constexpr Number R = ideal_gas_constant<Number>;
     const Number RT = R * T;
     const Number invRT = Number{1} / RT;
