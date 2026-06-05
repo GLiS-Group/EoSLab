@@ -71,6 +71,18 @@ public:
             out[i] = R * T * rho[i] * (std::log(rho[i]) + phi);
         }
     }
+
+    template<std::floating_point Number>
+    [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
+    {
+        const Number R = glis::eos::ideal_gas_constant<Number>;
+        Number psi{0};
+        for (std::size_t i = 0; i < N; ++i) {
+            const Number phi = Number(h[i]) - (Number(g[i]) * std::log(T));
+            psi += R * T * rho[i] * (std::log(rho[i]) + phi);
+        }
+        return psi;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -131,6 +143,21 @@ public:
         for (std::size_t i = 0; i < N; ++i) {
             out[i] = R * T * ((rho[i] * S1) + (Number{0.5} * rho[i] * c * S2));
         }
+    }
+
+    template<std::floating_point Number>
+    [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
+    {
+        const Number R = glis::eos::ideal_gas_constant<Number>;
+        Number c{0};
+        Number S1{0};
+        Number S2{0};
+        for (std::size_t i = 0; i < N; ++i) {
+            c += rho[i];
+            S1 += rho[i] * (Number(b[i]) - (Number(beta[i]) / T));
+            S2 += rho[i] * Number(gamma[i]);
+        }
+        return R * T * ((c * S1) + (Number{0.5} * c * c * S2));
     }
 };
 

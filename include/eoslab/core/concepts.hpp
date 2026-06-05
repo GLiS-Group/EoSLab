@@ -47,6 +47,13 @@ namespace glis::eos {
  *   - `rho_i` pointer to the partial-molar-concentration array [mol/m^3]
  *   - `T` temperature [K]
  *   - `out` output array, per-component Helmholtz energy density [J/m^3]
+ * - `calc_helmholtz_density(rho_i, T) -> (convertible to double)`
+ *   Total Helmholtz energy **density** @f$\Psi = \sum_i \Psi_i@f$, accumulated
+ *   directly into a scalar (no per-component buffer). This is the scalar the
+ *   reverse-mode autodiff differentiates to obtain chemical potentials.
+ *   - `rho_i` pointer to the partial-molar-concentration array [mol/m^3]
+ *   - `T` temperature [K]
+ *   - returns the total Helmholtz energy density [J/m^3]
  * - `size() -> (convertible to std::size_t)`
  *   Number of components [-].
  *
@@ -61,6 +68,7 @@ concept EquationOfState =
     requires(const E& eos, const double mole_concentration, const double* mole_fractions,
              const double* partial_mole_concentrations, const double temperature, double* out_array) {
         { eos.calc_partial_helmholtz(partial_mole_concentrations, temperature, out_array) } -> std::same_as<void>;
+        { eos.calc_helmholtz_density(partial_mole_concentrations, temperature) } -> std::convertible_to<double>;
         { eos.calc_helmholtz(mole_concentration, mole_fractions, temperature) } -> std::convertible_to<double>;
         { eos.size() } -> std::convertible_to<std::size_t>;
     };

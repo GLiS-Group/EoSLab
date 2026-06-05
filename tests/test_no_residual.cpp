@@ -45,6 +45,7 @@ int main()
             const Number T{300.0};
 
             expect(eq(res.calc_helmholtz(c, rho.data(), T), Number{0}));
+            expect(eq(res.calc_helmholtz_density(rho.data(), T), Number{0}));
 
             // Pre-fill with garbage to confirm every entry is overwritten.
             std::array<Number, N> out{Number{7}, Number{-8}, Number{9}};
@@ -68,6 +69,7 @@ int main()
             const Number T{275.0};
 
             expect(eq(res.calc_helmholtz(c, rho.data(), T), Number{0}));
+            expect(eq(res.calc_helmholtz_density(rho.data(), T), Number{0}));
 
             std::array<Number, N> out{Number{7}, Number{-8}, Number{9}, Number{-1}};
             res.calc_partial_helmholtz(rho.data(), T, out.data());
