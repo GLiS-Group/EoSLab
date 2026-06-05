@@ -13,9 +13,12 @@
 // coverage added in Phase 3; here we check values, consistency, and pre-calc
 // hoisting directly.
 //
+#include "derivative_test_harness.hpp"
 #include "eoslab/core/concepts.hpp"
+#include "eoslab/core/eos_pair.hpp"
 #include "eoslab/core/multifluid_base.hpp"
 #include "eoslab/core/numbers.hpp"
+#include "eoslab/residual_models/no_residual.hpp"
 
 #include <algorithm>
 #include <array>
@@ -30,7 +33,9 @@
 using namespace boost::ut;
 namespace ge = glis::eos;
 
-namespace {
+// Named (not anonymous) namespace: Enzyme requires the differentiated model type
+// to have linkage, which an anonymous-namespace type would not.
+namespace mf_test {
 
 // Relative-closeness check with an informative message.
 void check_close(std::string_view name, double actual, double expected, double rtol = 1e-12)
@@ -128,7 +133,9 @@ double ideal_a(double c, std::span<const double> x, double T, std::span<const Id
 
 constexpr std::array<IdealParams, 2> kParams{IdealParams{2.5, 1.5}, IdealParams{3.1, 2.0}};
 
-} // namespace
+} // namespace mf_test
+
+using namespace mf_test;
 
 // Compile-time: the orchestrated models model the expected concepts.
 static_assert(ge::EquationOfState<MfIdealGas<2>>);
@@ -216,6 +223,21 @@ int main()
             const double T = 310.0;
             expect(eq(dyn.size(), std::size_t{2}));
             check_close("a", dyn.calc_helmholtz(c, x.data(), T), fixed.calc_helmholtz(c, x.data(), T));
+        };
+
+        // ----------------------------------------------------------------- //
+        // Enzyme forward + reverse mode differentiate correctly THROUGH the
+        // CRTP base (pre-calc hoisting, for_each_component, get_parameters all
+        // inlined). Paired with a zero residual, every derivative-based property
+        // reduces to the analytic ideal-gas reference.
+        // ----------------------------------------------------------------- //
+        "enzyme derivative consistency through the CRTP base"_test = [] {
+            const MfIdealGas<2> ideal{kParams};
+            const ge::NoResidual<2> residual{};
+            const ge::EoS<MfIdealGas<2>, ge::NoResidual<2>> eos{ideal, residual};
+
+            eoslab_test::run_derivative_consistency_tests<2>(eos, 100.0, {0.4, 0.6}, 300.0);
+            eoslab_test::run_derivative_consistency_tests<2>(eos, 250.0, {0.7, 0.3}, 350.0);
         };
     };
 }
