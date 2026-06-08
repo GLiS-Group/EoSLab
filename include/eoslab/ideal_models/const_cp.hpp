@@ -155,7 +155,9 @@ public:
                                                                  const MolarPre<Number>& pre) const
     {
         const Number R = ideal_gas_constant<Number>;
-        return (2 * R * T * xlnx(x[i])) +
+        // TODO: test how changing the `xlnx` continuity template parameter affects the calculation of the chemical
+        // potential (computed by differentiating the Helmholtz energy w.r.t. each `rho_i`).
+        return (2 * R * T * xlnx<0>(x[i])) +
                (x[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) + pre.RTlnC -
                         (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
     }
