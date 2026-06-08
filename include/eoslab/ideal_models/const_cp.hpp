@@ -11,6 +11,7 @@
  * ideal entropy of mixing) through glis::eos::MultiFluidBase.
  */
 
+#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/concepts.hpp"
 #include "eoslab/core/multifluid_base.hpp"
 #include "eoslab/core/numbers.hpp"
@@ -120,7 +121,7 @@ public:
      * @param T Temperature [K].
      */
     template<std::floating_point Number>
-    [[nodiscard]] [[gnu::always_inline]] MolarPre<Number> perform_pre_calculations(Number c, const Number* /*x*/,
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE MolarPre<Number> perform_pre_calculations(Number c, const Number* /*x*/,
                                                                                    Number T) const
     {
         return MolarPre<Number>{T * std::log(T), ideal_gas_constant<Number> * T * std::log(c)};
@@ -132,7 +133,7 @@ public:
      * @param T     Temperature [K].
      */
     template<std::floating_point Number>
-    [[nodiscard]] [[gnu::always_inline]] DensityPre<Number> perform_pre_calculations(const Number* rho_i, Number T) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE DensityPre<Number> perform_pre_calculations(const Number* rho_i, Number T) const
     {
         Number c{0};
         this->for_each_component([&](std::size_t i) { c += rho_i[i]; });
@@ -148,7 +149,7 @@ public:
      * @param pre Cached molar pre-calculation.
      */
     template<std::floating_point Number>
-    [[nodiscard]] [[gnu::always_inline]] Number calc_helmholtz_i(Number /*c*/, const Number* x, Number T, std::size_t i,
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE Number calc_helmholtz_i(Number /*c*/, const Number* x, Number T, std::size_t i,
                                                                  const detail::ConstantCpParams& p,
                                                                  const MolarPre<Number>& pre) const
     {
@@ -168,7 +169,7 @@ public:
      * @param pre   Cached density pre-calculation.
      */
     template<std::floating_point Number>
-    [[nodiscard]] [[gnu::always_inline]] Number calc_helmholtz_density_i(const Number* rho_i, Number T, std::size_t i,
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE Number calc_helmholtz_density_i(const Number* rho_i, Number T, std::size_t i,
                                                                          const detail::ConstantCpParams& p,
                                                                          const DensityPre<Number>& pre) const
     {
