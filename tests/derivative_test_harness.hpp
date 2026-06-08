@@ -51,6 +51,86 @@ inline void check_rel(std::string_view name, double actual, double expected, dou
                                          actual, expected, rel, reltol);
 }
 
+// ===========================================================================
+// Reusable single-call checks usable by ANY model's test suite. Each is a
+// templated one-liner; loop over a few states in the caller for coverage.
+// ===========================================================================
+
+// Structural Helmholtz consistency for a single contribution model (ideal or
+// residual). Applies to EVERY model: it only uses the EquationOfState interface.
+//   (1) Psi(rho,T) == sum_i partial_i(rho,T)              (decomposition)
+//   (2) Psi(rho,T) == c * a(c,x,T),  c = sum rho, x_i = rho_i/c   (density<->molar)
+// No physical reference values are needed; this catches density/molar and
+// per-component bookkeeping mistakes regardless of the model's physics.
+template<std::size_t N, class Model>
+void check_helmholtz_consistency(const Model& model, std::array<double, N> rho, double T, double rtol = 1e-11)
+{
+    double c = 0.0;
+    for (const double r : rho) {
+        c += r;
+    }
+    std::array<double, N> x{};
+    for (std::size_t i = 0; i < N; ++i) {
+        x[i] = rho[i] / c;
+    }
+
+    const double psi = model.calc_helmholtz_density(rho.data(), T);
+
+    std::array<double, N> partial{};
+    model.calc_partial_helmholtz(rho.data(), T, partial.data());
+    double psi_sum = 0.0;
+    for (const double v : partial) {
+        psi_sum += v;
+    }
+    check_rel("Psi == sum_i Psi_i", psi, psi_sum, rtol);
+    check_rel("Psi == c * a", psi, c * model.calc_helmholtz(c, x.data(), T), rtol);
+}
+
+// Ideal-gas pressure: any ideal model paired with a zero residual must give the
+// ideal-gas law p = c R T. Pass the EoS pair (ideal model + NoResidual).
+template<std::size_t N, class EoSPair>
+void check_ideal_gas_pressure(const EoSPair& eos, double c, std::array<double, N> x, double T, double rtol = 1e-12)
+{
+    const double R = glis::eos::ideal_gas_constant<double>;
+    std::array<double, N> xarr = x;
+    const std::span<const double, N> xs{xarr};
+    check_rel("p == c R T", glis::eos::calc_pressure(eos, c, xs, T), c * R * T, rtol);
+}
+
+// Euler relation (a thermodynamic identity holding for EVERY EoS):
+//     p = sum_i rho_i mu_i - Psi
+// with mu_i the chemical potentials (reverse-mode autodiff of the total Psi).
+// Cross-checks the chemical potentials against calc_pressure; for mixtures this
+// is the guard that the partial-molar autodiff is self-consistent with pressure.
+template<std::size_t N, class EoSPair>
+void check_euler_pressure(const EoSPair& eos, std::array<double, N> rho, double T, double rtol = 1e-8)
+{
+    namespace ge = glis::eos;
+    double c = 0.0;
+    for (const double r : rho) {
+        c += r;
+    }
+    std::array<double, N> x{};
+    for (std::size_t i = 0; i < N; ++i) {
+        x[i] = rho[i] / c;
+    }
+
+    std::array<double, N> rhoarr = rho;
+    const std::span<const double, N> rhos{rhoarr};
+    std::array<double, N> mu{};
+    ge::calc_chemical_potential(eos, rhos, T, std::span<double, N>{mu});
+
+    const double psi =
+        eos.ideal().calc_helmholtz_density(rho.data(), T) + eos.residual().calc_helmholtz_density(rho.data(), T);
+    double p_euler = -psi;
+    for (std::size_t i = 0; i < N; ++i) {
+        p_euler += rho[i] * mu[i];
+    }
+
+    const std::span<const double, N> xs{x};
+    check_rel("Euler p == calc_pressure", p_euler, ge::calc_pressure(eos, c, xs, T), rtol);
+}
+
 // ---------------------------------------------------------------------------
 // Main harness.
 //   eos : an EoS<Ideal, Residual>
