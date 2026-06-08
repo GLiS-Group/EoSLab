@@ -23,14 +23,12 @@ namespace glis::eos {
 namespace detail {
 /// @internal Does @p D define a pre-calculation for the (c, x, T) signature?
 template<class D, class Number>
-concept has_molar_pre_calc = requires(const D& d, Number c, const Number* x, Number T) {
-    d.perform_pre_calculations(c, x, T);
-};
+concept has_molar_pre_calc =
+    requires(const D& d, Number c, const Number* x, Number T) { d.perform_pre_calculations(c, x, T); };
 /// @internal Does @p D define a pre-calculation for the (rho_i, T) signature?
 template<class D, class Number>
-concept has_density_pre_calc = requires(const D& d, const Number* rho_i, Number T) {
-    d.perform_pre_calculations(rho_i, T);
-};
+concept has_density_pre_calc =
+    requires(const D& d, const Number* rho_i, Number T) { d.perform_pre_calculations(rho_i, T); };
 } // namespace detail
 
 /**
@@ -80,8 +78,7 @@ public:
      * @param T Temperature [K].
      * @return Molar Helmholtz energy [J/mol].
      */
-    template<std::floating_point Number>
-    [[nodiscard]]  Number calc_helmholtz(Number c, const Number* x, Number T) const
+    template<std::floating_point Number> [[nodiscard]] Number calc_helmholtz(Number c, const Number* x, Number T) const
     {
         Number a{0};
         if constexpr (detail::has_molar_pre_calc<Derived, Number>) {
@@ -103,7 +100,7 @@ public:
      * @return Helmholtz energy density [J/m^3].
      */
     template<std::floating_point Number>
-    [[nodiscard]]  Number calc_helmholtz_density(const Number* rho_i, Number T) const
+    [[nodiscard]] Number calc_helmholtz_density(const Number* rho_i, Number T) const
     {
         Number psi{0};
         if constexpr (detail::has_density_pre_calc<Derived, Number>) {
@@ -125,8 +122,7 @@ public:
      * @param T     Temperature [K].
      * @param[out] out Per-component Helmholtz energy density [J/m^3]; length `size()`.
      */
-    template<std::floating_point Number>
-    void calc_partial_helmholtz(const Number* rho_i, Number T, Number* out) const
+    template<std::floating_point Number> void calc_partial_helmholtz(const Number* rho_i, Number T, Number* out) const
     {
         if constexpr (detail::has_density_pre_calc<Derived, Number>) {
             const auto pre = self().perform_pre_calculations(rho_i, T);

@@ -72,8 +72,7 @@ public:
         }
     }
 
-    template<std::floating_point Number>
-    [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
+    template<std::floating_point Number> [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
     {
         const Number R = glis::eos::ideal_gas_constant<Number>;
         Number psi{0};
@@ -145,8 +144,7 @@ public:
         }
     }
 
-    template<std::floating_point Number>
-    [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
+    template<std::floating_point Number> [[nodiscard]] Number calc_helmholtz_density(const Number* rho, Number T) const
     {
         const Number R = glis::eos::ideal_gas_constant<Number>;
         Number c{0};

@@ -133,7 +133,8 @@ public:
      * @param T     Temperature [K].
      */
     template<std::floating_point Number>
-    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE DensityPre<Number> perform_pre_calculations(const Number* rho_i, Number T) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE DensityPre<Number> perform_pre_calculations(const Number* rho_i,
+                                                                                     Number T) const
     {
         Number c{0};
         this->for_each_component([&](std::size_t i) { c += rho_i[i]; });
@@ -154,10 +155,9 @@ public:
                                                                  const MolarPre<Number>& pre) const
     {
         const Number R = ideal_gas_constant<Number>;
-        return (2 * R * T * xlnx(x[i]))
-            + (x[i]
-               * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) + pre.RTlnC
-                  - (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        return (2 * R * T * xlnx(x[i])) +
+               (x[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) + pre.RTlnC -
+                        (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
     }
 
     /**
@@ -174,10 +174,9 @@ public:
                                                                          const DensityPre<Number>& pre) const
     {
         const Number R = ideal_gas_constant<Number>;
-        return (2 * R * T * xlnx(rho_i[i]))
-            + (rho_i[i]
-               * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) - pre.RTlnC
-                  - (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        return (2 * R * T * xlnx(rho_i[i])) +
+               (rho_i[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) - pre.RTlnC -
+                            (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
     }
 
 private:

@@ -47,7 +47,8 @@ public:
      * @brief Molar residual Helmholtz energy, which is identically zero.
      * @return @c Number{0}.
      */
-    template<std::floating_point Number> Number calc_helmholtz(const Number /*c*/, const Number* /*x*/, const Number /*T*/) const
+    template<std::floating_point Number>
+    Number calc_helmholtz(const Number /*c*/, const Number* /*x*/, const Number /*T*/) const
     {
         return Number{0};
     }

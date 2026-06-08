@@ -13,8 +13,8 @@
  * contiguous span of one parameter across all species (column).
  */
 
-#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/aggregate.hpp"
+#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/eos_base.hpp"
 
 #include <array>
@@ -35,7 +35,7 @@ namespace glis::eos {
  */
 template<class ParamStruct, std::size_t N = std::dynamic_extent> class ParameterStorage : public BaseEoS<N> {
 public:
-    using parameter_type = ParamStruct;                ///< The per-species parameter struct.
+    using parameter_type = ParamStruct; ///< The per-species parameter struct.
     static constexpr std::size_t parameter_count = detail::aggregate_arity<ParamStruct>(); ///< Parameters per species.
 
     /// @brief Construct with all parameters zero-initialized.
@@ -91,7 +91,7 @@ private:
 template<class ParamStruct>
 class ParameterStorage<ParamStruct, std::dynamic_extent> : public BaseEoS<std::dynamic_extent> {
 public:
-    using parameter_type = ParamStruct;                ///< The per-species parameter struct.
+    using parameter_type = ParamStruct; ///< The per-species parameter struct.
     static constexpr std::size_t parameter_count = detail::aggregate_arity<ParamStruct>(); ///< Parameters per species.
 
     /**

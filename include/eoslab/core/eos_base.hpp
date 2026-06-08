@@ -7,6 +7,7 @@
  */
 
 #include "eoslab/core/attributes.hpp"
+
 #include <cassert>
 #include <cstddef>
 #include <span>
