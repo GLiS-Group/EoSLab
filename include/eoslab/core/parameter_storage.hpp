@@ -60,7 +60,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] [[gnu::always_inline]] ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < N);
         return detail::make_from_indexed<ParamStruct>([&](std::size_t p) { return data_[(p * N) + i]; });
@@ -115,7 +115,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] [[gnu::always_inline]] ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < this->size());
         const std::size_t n = this->size();

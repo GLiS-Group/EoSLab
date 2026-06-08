@@ -80,7 +80,7 @@ public:
      * @return Molar Helmholtz energy [J/mol].
      */
     template<std::floating_point Number>
-    [[nodiscard]] Number calc_helmholtz(Number c, const Number* x, Number T) const
+    [[nodiscard]] [[gnu::always_inline]] Number calc_helmholtz(Number c, const Number* x, Number T) const
     {
         Number a{0};
         if constexpr (detail::has_molar_pre_calc<Derived, Number>) {
@@ -102,7 +102,7 @@ public:
      * @return Helmholtz energy density [J/m^3].
      */
     template<std::floating_point Number>
-    [[nodiscard]] Number calc_helmholtz_density(const Number* rho_i, Number T) const
+    [[nodiscard]] [[gnu::always_inline]] Number calc_helmholtz_density(const Number* rho_i, Number T) const
     {
         Number psi{0};
         if constexpr (detail::has_density_pre_calc<Derived, Number>) {
