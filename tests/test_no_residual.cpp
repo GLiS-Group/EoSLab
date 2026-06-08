@@ -37,7 +37,7 @@ int main()
         // -------------------------------------------------------------------
         "compile-time size: construction and zero output"_test = []<typename Number> {
             constexpr std::size_t N = 3;
-            const NoResidual<N> res{}; // only a default ctor is needed
+            const NoResidual<N> res{};            // only a default ctor is needed
             expect(eq(NoResidual<N>::size(), N)); // size() is static for a compile-time size
 
             const std::array<Number, N> rho{Number{1.0}, Number{2.0}, Number{3.0}};

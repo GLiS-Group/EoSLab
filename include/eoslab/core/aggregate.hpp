@@ -43,8 +43,9 @@ concept brace_constructible_with = requires { T{any_field_t<Is>{}...}; };
 // Is T aggregate-initializable from exactly N probe initializers?
 template<class T, std::size_t N> [[nodiscard]] consteval bool constructible_with_n()
 {
-    return []<std::size_t... Is>(std::index_sequence<Is...>) { return brace_constructible_with<T, Is...>; }(
-        std::make_index_sequence<N>{});
+    return []<std::size_t... Is>(std::index_sequence<Is...>) {
+        return brace_constructible_with<T, Is...>;
+    }(std::make_index_sequence<N>{});
 }
 
 /// @endcond

@@ -137,8 +137,7 @@ int main()
         // Inherited for_each_component visits every species once.
         // ----------------------------------------------------------------- //
         "for_each_component visits each species index once"_test = [] {
-            const ParameterStorage<Params, 3> store{
-                std::array<Params, 3>{Params{1, 1}, Params{2, 2}, Params{3, 3}}};
+            const ParameterStorage<Params, 3> store{std::array<Params, 3>{Params{1, 1}, Params{2, 2}, Params{3, 3}}};
             std::vector<std::size_t> visited;
             store.for_each_component([&](std::size_t i) { visited.push_back(i); });
             expect(eq(visited.size(), std::size_t{3}));

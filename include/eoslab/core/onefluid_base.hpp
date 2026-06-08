@@ -60,8 +60,7 @@ public:
      * @param T Temperature [K].
      * @return Molar Helmholtz energy [J/mol].
      */
-    template<std::floating_point Number>
-    [[nodiscard]] Number calc_helmholtz(Number c, const Number* x, Number T) const
+    template<std::floating_point Number> [[nodiscard]] Number calc_helmholtz(Number c, const Number* x, Number T) const
     {
         const auto avg = self().perform_pre_calculations(c, x, T);
         return self().calc_helmholtz_bulk(c, x, T, avg);
@@ -93,8 +92,7 @@ public:
      * @param T     Temperature [K].
      * @param[out] out Per-component Helmholtz energy density [J/m^3]; length `size()`.
      */
-    template<std::floating_point Number>
-    void calc_partial_helmholtz(const Number* rho_i, Number T, Number* out) const
+    template<std::floating_point Number> void calc_partial_helmholtz(const Number* rho_i, Number T, Number* out) const
     {
         // A one-fluid model has no natural per-species split; distribute the
         // total density by mole fraction so the entries sum to Psi. (Chemical

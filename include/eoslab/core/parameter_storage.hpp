@@ -14,6 +14,7 @@
  */
 
 #include "eoslab/core/aggregate.hpp"
+#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/eos_base.hpp"
 
 #include <array>
@@ -34,7 +35,7 @@ namespace glis::eos {
  */
 template<class ParamStruct, std::size_t N = std::dynamic_extent> class ParameterStorage : public BaseEoS<N> {
 public:
-    using parameter_type = ParamStruct;                ///< The per-species parameter struct.
+    using parameter_type = ParamStruct; ///< The per-species parameter struct.
     static constexpr std::size_t parameter_count = detail::aggregate_arity<ParamStruct>(); ///< Parameters per species.
 
     /// @brief Construct with all parameters zero-initialized.
@@ -60,7 +61,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < N);
         return detail::make_from_indexed<ParamStruct>([&](std::size_t p) { return data_[(p * N) + i]; });
@@ -90,7 +91,7 @@ private:
 template<class ParamStruct>
 class ParameterStorage<ParamStruct, std::dynamic_extent> : public BaseEoS<std::dynamic_extent> {
 public:
-    using parameter_type = ParamStruct;                ///< The per-species parameter struct.
+    using parameter_type = ParamStruct; ///< The per-species parameter struct.
     static constexpr std::size_t parameter_count = detail::aggregate_arity<ParamStruct>(); ///< Parameters per species.
 
     /**
@@ -115,7 +116,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < this->size());
         const std::size_t n = this->size();
