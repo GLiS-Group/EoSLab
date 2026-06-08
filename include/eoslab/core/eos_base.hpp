@@ -6,6 +6,7 @@
  *        tag a model as an ideal contribution.
  */
 
+#include "eoslab/core/attributes.hpp"
 #include <cassert>
 #include <cstddef>
 #include <span>
@@ -58,7 +59,7 @@ public:
      * model.for_each_component([&](std::size_t i) { out[i] = 0.0; });
      * @endcode
      */
-    template<class F> [[gnu::always_inline]] constexpr void for_each_component(F f) const
+    template<class F> GLIS_EOS_ALWAYS_INLINE constexpr void for_each_component(F f) const
     {
         [&]<std::size_t... Is>(std::index_sequence<Is...>) { (f(Is), ...); }(std::make_index_sequence<N>{});
     }
@@ -97,7 +98,7 @@ public:
      *           the standard algorithms), so a mutable callable may carry state
      *           across the visits.
      */
-    template<class F> [[gnu::always_inline]] constexpr void for_each_component(F f) const
+    template<class F> GLIS_EOS_ALWAYS_INLINE constexpr void for_each_component(F f) const
     {
         for (std::size_t idx = 0; idx < n_; ++idx) {
             f(idx);

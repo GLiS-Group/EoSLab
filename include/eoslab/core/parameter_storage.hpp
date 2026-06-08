@@ -13,6 +13,7 @@
  * contiguous span of one parameter across all species (column).
  */
 
+#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/aggregate.hpp"
 #include "eoslab/core/eos_base.hpp"
 
@@ -60,7 +61,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] [[gnu::always_inline]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < N);
         return detail::make_from_indexed<ParamStruct>([&](std::size_t p) { return data_[(p * N) + i]; });
@@ -115,7 +116,7 @@ public:
      * @param i Species index; must be `< size()`.
      * @return The reconstructed @p ParamStruct for species @p i.
      */
-    [[nodiscard]] [[gnu::always_inline]] ParamStruct get_parameters(std::size_t i) const
+    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE ParamStruct get_parameters(std::size_t i) const
     {
         assert(i < this->size());
         const std::size_t n = this->size();
