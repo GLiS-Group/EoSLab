@@ -5,7 +5,6 @@
 #include <array>
 #include <boost/ut.hpp>
 #include <cmath>
-#include <limits>
 #include <span>
 
 using namespace boost::ut;
@@ -94,88 +93,51 @@ int main()
             }
             std::span<const double, 2> rhos{rho};
             std::array<double, 2> mu{};
-            std::array<double, 2> scratch1{};
-            std::array<double, 2> scratch2{};
-            glis::eos::calc_chemical_potential(binary, rhos, T, std::span<double, 2>{mu},
-                                               std::span<double, 2>{scratch1}, std::span<double, 2>{scratch2});
+            glis::eos::calc_chemical_potential(binary, rhos, T, std::span<double, 2>{mu});
             check_rel("mu[0]", mu[0], mu_exact[0], 1e-11);
             check_rel("mu[1]", mu[1], mu_exact[1], 1e-11);
         };
 
         // -------------------------------------------------------------------
-        // Scratch buffers must NOT require caller pre-initialisation.
+        // calc_helmholtz_density (Psi) consistency.
         //
-        // The partial-molar routines take two caller-allocated scratch buffers
-        // (scratch1 = primal Psi_i, scratch2 = Enzyme shadow). This test pokes
-        // garbage -- including NaN/Inf -- into both buffers before each call and
-        // checks the results are unchanged. The internal handling is: scratch1
-        // is fully overwritten before use, and scratch2 is zeroed internally
-        // (the Enzyme reverse pass requires a zeroed shadow). A passing run
-        // confirms the @note in the docs: the user need not preprocess either
-        // array.
-        //
-        // NOTE on tolerance: we compare against a clean reference with a *tight*
-        // relative tolerance rather than exact equality. The clean reference and
-        // the dirty calls are distinct call sites; with the reference's scratch
-        // known to be zero at compile time the optimizer/Enzyme may contract
-        // floating-point ops slightly differently, giving a ~1 ULP (~1e-16
-        // relative) difference. That is codegen noise, not a dependence on the
-        // scratch contents -- a real dependence (e.g. an unzeroed shadow) instead
-        // corrupts the result by many orders of magnitude or yields NaN.
+        // The scalar Psi(rho, T) must agree with two independent references:
+        //   (1) the sum of the per-component decomposition calc_partial_helmholtz
+        //       (Psi = sum_i Psi_i), and
+        //   (2) the molar Helmholtz energy via Psi = c * a(c, x, T), with
+        //       c = sum_i rho_i and x_i = rho_i / c.
+        // Checked for both the ideal and residual contributions, unary + binary.
         // -------------------------------------------------------------------
-        "scratch buffers need no initialisation"_test = [&] {
-            const std::array<double, 2> x{0.45, 0.55};
-            const double c = 150.0;
-            const double T = 320.0;
-            const std::array<double, 2> rho{x[0] * c, x[1] * c};
-            std::span<const double, 2> xs{x};
-            std::span<const double, 2> rhos{rho};
+        "helmholtz_density consistency"_test = [&] {
+            auto check_model = [&](const auto& model, auto rho) {
+                const double T = 320.0;
+                double c = 0.0;
+                for (const double r : rho) {
+                    c += r;
+                }
+                auto x = rho; // same type/size; converted to mole fractions
+                for (auto& xi : x) {
+                    xi /= c;
+                }
 
-            const double inf = std::numeric_limits<double>::infinity();
-            const double nan = std::numeric_limits<double>::quiet_NaN();
-            const std::array<std::array<double, 2>, 3> garbage{{{1.0e300, -7.0e-12}, {inf, -inf}, {nan, nan}}};
+                const double psi = model.calc_helmholtz_density(rho.data(), T);
 
-            // Reference values from a clean (zero-initialised) run.
-            std::array<double, 2> mu_ref{};
-            std::array<double, 2> logphi_ref{};
-            std::array<double, 2> fug_ref{};
-            {
-                std::array<double, 2> s1{};
-                std::array<double, 2> s2{};
-                glis::eos::calc_chemical_potential(binary, rhos, T, std::span<double, 2>{mu_ref},
-                                                   std::span<double, 2>{s1}, std::span<double, 2>{s2});
-                glis::eos::calc_log_fugacity_coeff(binary, c, xs, T, rhos, std::span<double, 2>{logphi_ref},
-                                                   std::span<double, 2>{s1}, std::span<double, 2>{s2});
-                glis::eos::calc_fugacity(binary, rhos, T, std::span<double, 2>{fug_ref}, std::span<double, 2>{s1},
-                                         std::span<double, 2>{s2});
-            }
+                auto psi_i = rho; // reuse as scratch of the right size
+                model.calc_partial_helmholtz(rho.data(), T, psi_i.data());
+                double psi_sum = 0.0;
+                for (const double v : psi_i) {
+                    psi_sum += v;
+                }
+                check_rel("Psi == sum_i Psi_i", psi, psi_sum, 1e-12);
 
-            constexpr double tol = 1e-12; // far above ~1 ULP, far below any real corruption
-            for (const auto& g : garbage) {
-                auto s1 = g; // dirty scratch1
-                auto s2 = g; // dirty scratch2
-                std::array<double, 2> mu{};
-                glis::eos::calc_chemical_potential(binary, rhos, T, std::span<double, 2>{mu}, std::span<double, 2>{s1},
-                                                   std::span<double, 2>{s2});
-                check_rel("mu[0] (dirty scratch)", mu[0], mu_ref[0], tol);
-                check_rel("mu[1] (dirty scratch)", mu[1], mu_ref[1], tol);
+                const double a = model.calc_helmholtz(c, x.data(), T);
+                check_rel("Psi == c * a", psi, c * a, 1e-12);
+            };
 
-                s1 = g;
-                s2 = g;
-                std::array<double, 2> logphi{};
-                glis::eos::calc_log_fugacity_coeff(binary, c, xs, T, rhos, std::span<double, 2>{logphi},
-                                                   std::span<double, 2>{s1}, std::span<double, 2>{s2});
-                check_rel("logphi[0] (dirty scratch)", logphi[0], logphi_ref[0], tol);
-                check_rel("logphi[1] (dirty scratch)", logphi[1], logphi_ref[1], tol);
-
-                s1 = g;
-                s2 = g;
-                std::array<double, 2> fug{};
-                glis::eos::calc_fugacity(binary, rhos, T, std::span<double, 2>{fug}, std::span<double, 2>{s1},
-                                         std::span<double, 2>{s2});
-                check_rel("fug[0] (dirty scratch)", fug[0], fug_ref[0], tol);
-                check_rel("fug[1] (dirty scratch)", fug[1], fug_ref[1], tol);
-            }
+            check_model(binary.ideal(), std::array<double, 2>{60.0, 90.0});
+            check_model(binary.residual(), std::array<double, 2>{60.0, 90.0});
+            check_model(unary.ideal(), std::array<double, 1>{120.0});
+            check_model(unary.residual(), std::array<double, 1>{120.0});
         };
 
         // -------------------------------------------------------------------

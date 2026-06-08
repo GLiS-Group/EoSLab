@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cstddef>
 #include <span>
+#include <utility>
 namespace glis::eos {
 
 /**
@@ -37,6 +38,30 @@ public:
      * @return @p N
      */
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
+
+    /**
+     * @brief Invoke @p f once for every component index, in ascending order.
+     *
+     * Calls `f(0), f(1), ..., f(size() - 1)`. For a compile-time component count
+     * the loop is expanded as a fold over @c std::index_sequence, so the bound is
+     * known at compile time and the body is fully unrolled. This lets a model
+     * write a single component loop instead of branching on whether the size is
+     * static or dynamic.
+     *
+     * @tparam F Callable invocable as `f(std::size_t)`.
+     * @param  f Callable applied to each component index. Taken by value (like
+     *           the standard algorithms), so a mutable callable may carry state
+     *           across the visits.
+     *
+     * @code{.cpp}
+     * // Zero every component of an output buffer:
+     * model.for_each_component([&](std::size_t i) { out[i] = 0.0; });
+     * @endcode
+     */
+    template<class F> constexpr void for_each_component(F f) const
+    {
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) { (f(Is), ...); }(std::make_index_sequence<N>{});
+    }
 };
 
 /**
@@ -58,6 +83,26 @@ public:
      * @return The stored component count.
      */
     [[nodiscard]] constexpr std::size_t size() const noexcept { return n_; }
+
+    /**
+     * @brief Invoke @p f once for every component index, in ascending order.
+     *
+     * Calls `f(0), f(1), ..., f(size() - 1)` via a runtime loop over the stored
+     * component count. Mirrors the compile-time-sized overload so models can use
+     * the same component-loop spelling regardless of whether the size is known
+     * at compile time.
+     *
+     * @tparam F Callable invocable as `f(std::size_t)`.
+     * @param  f Callable applied to each component index. Taken by value (like
+     *           the standard algorithms), so a mutable callable may carry state
+     *           across the visits.
+     */
+    template<class F> constexpr void for_each_component(F f) const
+    {
+        for (std::size_t idx = 0; idx < n_; ++idx) {
+            f(idx);
+        }
+    }
 
 private:
     std::size_t n_; ///< Number of components.

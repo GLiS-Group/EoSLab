@@ -182,10 +182,7 @@ void run_derivative_consistency_tests(const EoSPair& eos, double c, std::array<d
 
     std::span<const double, N> rhos{rho};
     std::array<double, N> chem{};
-    std::array<double, N> scratch1{};
-    std::array<double, N> scratch2{};
-    ge::calc_chemical_potential(eos, rhos, T, std::span<double, N>{chem}, std::span<double, N>{scratch1},
-                                std::span<double, N>{scratch2});
+    ge::calc_chemical_potential(eos, rhos, T, std::span<double, N>{chem});
     for (std::size_t i = 0; i < N; ++i) {
         check_rel(std::format("chemical_potential[{}]", i), chem[i], static_cast<double>(mu_ref[i]), 1e-7);
     }
@@ -193,16 +190,14 @@ void run_derivative_consistency_tests(const EoSPair& eos, double c, std::array<d
     // Z = p / (c R T)
     const ld Z_ref = p_ref / (c0 * R * T0);
     std::array<double, N> logphi{};
-    ge::calc_log_fugacity_coeff(eos, c, xs, T, rhos, std::span<double, N>{logphi}, std::span<double, N>{scratch1},
-                                std::span<double, N>{scratch2});
+    ge::calc_log_fugacity_coeff(eos, c, xs, T, rhos, std::span<double, N>{logphi});
     for (std::size_t i = 0; i < N; ++i) {
         const ld ref = (mu_res_ref[i] / (R * T0)) - std::log(Z_ref);
         check_rel(std::format("log_fugacity_coeff[{}]", i), logphi[i], static_cast<double>(ref), 1e-7);
     }
 
     std::array<double, N> fug{};
-    ge::calc_fugacity(eos, rhos, T, std::span<double, N>{fug}, std::span<double, N>{scratch1},
-                      std::span<double, N>{scratch2});
+    ge::calc_fugacity(eos, rhos, T, std::span<double, N>{fug});
     for (std::size_t i = 0; i < N; ++i) {
         const ld ref = rhol[i] * R * T0 * std::exp(mu_res_ref[i] / (R * T0));
         check_rel(std::format("fugacity[{}]", i), fug[i], static_cast<double>(ref), 1e-7);

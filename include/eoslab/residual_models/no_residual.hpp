@@ -47,7 +47,17 @@ public:
      * @brief Molar residual Helmholtz energy, which is identically zero.
      * @return @c Number{0}.
      */
-    template<std::floating_point Number> Number calc_helmholtz(Number /*c*/, const Number* /*x*/, Number /*T*/) const
+    template<std::floating_point Number> Number calc_helmholtz(const Number /*c*/, const Number* /*x*/, const Number /*T*/) const
+    {
+        return Number{0};
+    }
+
+    /**
+     * @brief Total residual Helmholtz energy density, which is identically zero.
+     * @return @c Number{0}.
+     */
+    template<std::floating_point Number>
+    Number calc_helmholtz_density(const Number* /*rho_i*/, const Number /*T*/) const
     {
         return Number{0};
     }
@@ -60,18 +70,9 @@ public:
      * @param out Output array; filled with zeros.
      */
     template<std::floating_point Number>
-    void calc_partial_helmholtz(const Number* /*rho_i*/, Number /*T*/, Number* out) const
+    void calc_partial_helmholtz(const Number* /*rho_i*/, const Number /*T*/, Number* out) const
     {
-        if constexpr (N != std::dynamic_extent) {
-            for (std::size_t idx = 0; idx < N; ++idx) {
-                out[idx] = Number{0};
-            }
-        }
-        else {
-            for (std::size_t idx = 0; idx < this->size(); ++idx) {
-                out[idx] = Number{0};
-            }
-        }
+        this->for_each_component([&](std::size_t idx) { out[idx] = Number{0}; });
     }
 };
 
