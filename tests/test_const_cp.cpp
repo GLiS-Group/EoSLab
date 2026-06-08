@@ -1,38 +1,24 @@
 //
 // Unit tests for the constant-cp ideal-gas model (glis::eos::ConstantCp).
 //
-// The model is exercised on its own (per-species kernel algebra) and paired with
-// NoResidual so the thermodynamic property routines in core_calculations.hpp can
-// be evaluated.
+// Most of the heavy lifting is delegated to the reusable, model-agnostic helpers
+// in derivative_test_harness.hpp:
+//   - check_helmholtz_consistency       (Psi == c*a, Psi == sum_i Psi_i)
+//   - check_ideal_gas_pressure          (p == c R T)
+//   - check_euler_pressure              (sum_i rho_i mu_i - Psi == calc_pressure)
+//   - run_derivative_consistency_tests  (every property vs. finite differences)
+// What remains here is genuinely ConstantCp-specific: the per-species kernel
+// algebra and the caloric properties checked against the *physical* reference
+// data (h_ref, s_ref, c_p), which the generic helpers cannot know.
 //
-// Physical references (pure ideal gas, temperature-independent isobaric molar
-// heat capacity c_p, referenced to a state (T_ref, p_ref)):
+// Physical references (pure ideal gas, constant isobaric molar heat capacity
+// c_p, referenced to a state (T_ref, p_ref)):
 //     h(T)    = h_ref + c_p (T - T_ref)
 //     s(T, c) = s_ref + (c_p - R) ln(T / T_ref) - R ln(c / c_ref)
 //     c_p     = c_p  (constant),   with c_ref = p_ref / (R T_ref).
 // At the reference state (T = T_ref, c = c_ref): h = h_ref and s = s_ref.
 //
-// ----------------------------------------------------------------------------
-// History (two bugs found via these tests, both now fixed):
-//
-//  (A) FORMULA -- the molar Helmholtz was missing a -R*T term, so it was offset
-//      by +R*T (a Gibbs-like energy). This left p, h, u, c_p, c_v correct but
-//      made the entropy come out as s_ref - R. Fixed by subtracting R*T*x_i in
-//      calc_helmholtz_i and R*T*rho_i in calc_helmholtz_density_i. The
-//      finite-difference caloric test below is the autodiff-independent guard.
-//
-//  (B) AUTODIFF -- in the debug build (-O1) the Enzyme-differentiated multi-
-//      component properties (calc_entropy/c_p/c_v/internal_energy/enthalpy and
-//      the chemical-potential / Euler-relation check) disagreed with finite
-//      differences, while release (-O3) was correct. Root cause: at -O1 the
-//      hoisted pre-calculation struct and per-species parameter struct crossed
-//      un-inlined call boundaries as aggregates that Enzyme could not analyse.
-//      Fixed by marking the differentiated chain [[gnu::always_inline]] so the
-//      whole expression flattens to SSA before Enzyme runs, at any -O level.
-//      The mixture Euler-relation test below is the guard (run it in debug!).
-// ----------------------------------------------------------------------------
-//
-#include "derivative_test_harness.hpp" // check_rel, central_diff
+#include "derivative_test_harness.hpp"
 #include "eoslab/core/core_calculations.hpp"
 #include "eoslab/core/eos_pair.hpp"
 #include "eoslab/core/numbers.hpp"
@@ -51,7 +37,6 @@ using namespace eoslab_test;
 namespace {
 
 namespace ge = glis::eos;
-using ld = long double;
 
 template<std::size_t N> using Input = typename ge::ConstantCp<N>::SpeciesInput;
 
@@ -76,6 +61,8 @@ constexpr double cp_in = 29.1;
 constexpr double h_ref = -1234.0;
 constexpr double s_ref = 205.0;
 
+constexpr std::array<Input<1>, 1> unary_inputs{{{T_ref, p_ref, cp_in, h_ref, s_ref}}};
+
 } // namespace
 
 int main()
@@ -84,22 +71,31 @@ int main()
         const double R = ge::ideal_gas_constant<double>;
 
         // ===================================================================
-        // 1. Per-species kernel algebra (no autodiff).
-        //    The molar and density kernels must be mutually consistent:
-        //        c * a_i = Psi_i           and        c * a = Psi.
+        // Generic structural consistency (delegated to the shared helper):
+        //   Psi == c*a   and   Psi == sum_i Psi_i.
         // ===================================================================
-        "kernel consistency: c*a_i == Psi_i"_test = [&] {
+        "helmholtz consistency (generic)"_test = [&] {
             const ge::ConstantCp<2> model(binary_inputs);
             for (const double T : {280.0, 340.0, 410.0}) {
-                for (const std::array<double, 2> rho : {std::array<double, 2>{40.0, 70.0},
-                                                        std::array<double, 2>{5.0, 95.0},
-                                                        std::array<double, 2>{120.0, 30.0}}) {
+                check_helmholtz_consistency<2>(model, {40.0, 70.0}, T);
+                check_helmholtz_consistency<2>(model, {5.0, 95.0}, T);
+                check_helmholtz_consistency<2>(model, {120.0, 30.0}, T);
+            }
+        };
+
+        // ===================================================================
+        // ConstantCp-specific: the two per-species kernels must agree,
+        //   c * calc_helmholtz_i == calc_helmholtz_density_i,
+        // and the density kernel must match the partial-helmholtz decomposition.
+        // (MultiFluidBase kernel API, so not part of the generic helper.)
+        // ===================================================================
+        "per-species kernel consistency (c*a_i == Psi_i)"_test = [&] {
+            const ge::ConstantCp<2> model(binary_inputs);
+            for (const double T : {280.0, 410.0}) {
+                for (const std::array<double, 2> rho :
+                     {std::array<double, 2>{40.0, 70.0}, std::array<double, 2>{5.0, 95.0}}) {
                     const double c = rho[0] + rho[1];
                     const std::array<double, 2> x{rho[0] / c, rho[1] / c};
-
-                    const double a = model.calc_helmholtz(c, x.data(), T);
-                    const double psi = model.calc_helmholtz_density(rho.data(), T);
-                    check_rel("Psi == c * a", psi, c * a, 1e-11);
 
                     const auto pre_molar = model.perform_pre_calculations(c, x.data(), T);
                     const auto pre_density = model.perform_pre_calculations(rho.data(), T);
@@ -119,66 +115,38 @@ int main()
         };
 
         // ===================================================================
-        // 2. Ideal-gas pressure: p = c R T (mixture, via calc_pressure).
+        // Ideal-gas pressure p = c R T (delegated to the shared helper).
         // ===================================================================
         "ideal-gas pressure == c R T"_test = [&] {
             auto eos = make_const_cp_eos<2>(binary_inputs);
-            const std::array<double, 2> x{0.35, 0.65};
-            const std::span<const double, 2> xs{x};
             for (const double c : {20.0, 80.0, 200.0}) {
                 for (const double T : {270.0, 330.0, 410.0}) {
-                    check_rel("p == c R T", ge::calc_pressure(eos, c, xs, T), c * R * T, 1e-12);
+                    check_ideal_gas_pressure<2>(eos, c, {0.35, 0.65}, T);
                 }
             }
         };
 
         // ===================================================================
-        // 3. Reference-state caloric properties from FINITE DIFFERENCES of the
-        //    model's own Helmholtz energy (autodiff-independent). This isolates
-        //    the FORMULA from the autodiff layer.
-        //
-        //    Expected at (T_ref, c_ref): h = h_ref, c_p = c_p, s = s_ref.
-        //    >>> The entropy check currently FAILS by exactly R (see note (A)).
+        // Pressure via the Euler relation, sum_i rho_i mu_i - Psi == p
+        // (delegated to the shared helper). Exercises the multi-component
+        // reverse-mode chemical potentials.
         // ===================================================================
-        "reference caloric via finite differences (formula check)"_test = [&] {
-            const std::array<Input<1>, 1> in{{{T_ref, p_ref, cp_in, h_ref, s_ref}}};
-            const ge::ConstantCp<1> model(in);
-            const ld Rl = ge::ideal_gas_constant<ld>;
-            const ld c_ref = p_ref / (Rl * T_ref);
-            const std::array<ld, 1> x{1.0L};
-            auto a = [&](ld c, ld T) { return model.calc_helmholtz(c, x.data(), T); };
-
-            const ld hT = static_cast<ld>(T_ref) * 1e-4L;
-            const ld hc = c_ref * 1e-4L;
-            const ld a0 = a(c_ref, T_ref);
-            const ld aT = central_diff([&](ld T) { return a(c_ref, T); }, static_cast<ld>(T_ref), hT);
-            const ld aTT = central_diff(
-                [&](ld T) { return central_diff([&](ld t) { return a(c_ref, t); }, T, hT); }, static_cast<ld>(T_ref), hT);
-            const ld ac = central_diff([&](ld c) { return a(c, T_ref); }, c_ref, hc);
-
-            const ld p_fd = c_ref * c_ref * ac;          // p  = c^2 da/dc
-            const ld s_fd = -aT;                         // s  = -da/dT
-            const ld u_fd = a0 - (static_cast<ld>(T_ref) * aT);
-            const ld h_fd = u_fd + (p_fd / c_ref);       // h  = u + p/c
-            const ld cv_fd = -static_cast<ld>(T_ref) * aTT;
-            const ld cp_fd = cv_fd + Rl;                 // ideal gas: c_p = c_v + R
-
-            check_rel("FD pressure  == c_ref R T_ref", static_cast<double>(p_fd), static_cast<double>(c_ref * Rl * T_ref),
-                      1e-7);
-            check_rel("FD enthalpy  == h_ref", static_cast<double>(h_fd), h_ref, 1e-7);
-            check_rel("FD c_p       == c_p", static_cast<double>(cp_fd), cp_in, 1e-6);
-            check_rel("FD entropy   == s_ref", static_cast<double>(s_fd), s_ref, 1e-7);
+        "pressure via Euler relation (mixture)"_test = [&] {
+            auto eos = make_const_cp_eos<2>(binary_inputs);
+            for (const double c : {30.0, 90.0, 175.0}) {
+                for (const double T : {285.0, 360.0}) {
+                    check_euler_pressure<2>(eos, {0.4 * c, 0.6 * c}, T);
+                }
+            }
         };
 
         // ===================================================================
-        // 4. Reference-state caloric via the library API (core_calculations.hpp)
-        //    for a single species (autodiff is reliable for N == 1).
-        //
-        //    >>> The entropy check currently FAILS by exactly R (note (A)).
+        // ConstantCp-specific caloric properties vs the PHYSICAL reference data
+        // (the generic helpers don't know h_ref/s_ref/c_p). This is the guard
+        // that the Helmholtz formula itself is correct.
         // ===================================================================
-        "single-species reference state (library API)"_test = [&] {
-            const std::array<Input<1>, 1> in{{{T_ref, p_ref, cp_in, h_ref, s_ref}}};
-            auto eos = make_const_cp_eos<1>(in);
+        "single-species reference state"_test = [&] {
+            auto eos = make_const_cp_eos<1>(unary_inputs);
             const double c_ref = p_ref / (R * T_ref);
             const std::array<double, 1> x{1.0};
             const std::span<const double, 1> xs{x};
@@ -188,9 +156,8 @@ int main()
             check_rel("calc_entropy  == s_ref", ge::calc_entropy(eos, c_ref, xs, T_ref), s_ref, 1e-9);
         };
 
-        "single-species off-reference caloric (library API)"_test = [&] {
-            const std::array<Input<1>, 1> in{{{T_ref, p_ref, cp_in, h_ref, s_ref}}};
-            auto eos = make_const_cp_eos<1>(in);
+        "single-species off-reference caloric"_test = [&] {
+            auto eos = make_const_cp_eos<1>(unary_inputs);
             const double c_ref = p_ref / (R * T_ref);
             const std::array<double, 1> x{1.0};
             const std::span<const double, 1> xs{x};
@@ -207,36 +174,20 @@ int main()
         };
 
         // ===================================================================
-        // 5. Pressure via the Euler relation (mixtures):
-        //        p = sum_i rho_i mu_i - Psi
-        //    with mu_i the chemical potentials (reverse-mode autodiff of Psi).
-        //    For this model the identity reduces analytically to p = c R T, so
-        //    this also cross-checks calc_pressure.
-        //
-        //    >>> Currently FAILS for mixtures due to the autodiff issue (B);
-        //        the chemical potentials returned for N > 1 are inconsistent.
+        // Full derivative-consistency sweep: every property in
+        // core_calculations.hpp checked against 4th-order finite differences of
+        // the model's own Helmholtz energy (delegated to the shared harness).
+        // Covers both single-component and mixture states, in debug AND release.
         // ===================================================================
-        "pressure via Euler relation (mixture)"_test = [&] {
-            auto eos = make_const_cp_eos<2>(binary_inputs);
-            const std::array<double, 2> x{0.4, 0.6};
-            const std::span<const double, 2> xs{x};
+        "derivative consistency vs finite differences"_test = [&] {
+            auto unary = make_const_cp_eos<1>(unary_inputs);
+            run_derivative_consistency_tests<1>(unary, 120.0, {1.0}, 310.0);
+            run_derivative_consistency_tests<1>(unary, 200.0, {1.0}, 360.0);
 
-            for (const double c : {30.0, 90.0, 175.0}) {
-                for (const double T : {285.0, 360.0}) {
-                    std::array<double, 2> rho{x[0] * c, x[1] * c};
-                    const std::span<const double, 2> rhos{rho};
-
-                    std::array<double, 2> mu{};
-                    ge::calc_chemical_potential(eos, rhos, T, std::span<double, 2>{mu});
-
-                    const double psi = eos.ideal().calc_helmholtz_density(rho.data(), T) +
-                                       eos.residual().calc_helmholtz_density(rho.data(), T);
-                    const double p_euler = (rho[0] * mu[0]) + (rho[1] * mu[1]) - psi;
-
-                    check_rel("Euler p == calc_pressure", p_euler, ge::calc_pressure(eos, c, xs, T), 1e-8);
-                    check_rel("Euler p == c R T", p_euler, c * R * T, 1e-8);
-                }
-            }
+            auto binary = make_const_cp_eos<2>(binary_inputs);
+            run_derivative_consistency_tests<2>(binary, 100.0, {0.4, 0.6}, 300.0);
+            run_derivative_consistency_tests<2>(binary, 250.0, {0.7, 0.3}, 350.0);
+            run_derivative_consistency_tests<2>(binary, 40.0, {0.5, 0.5}, 280.0);
         };
     };
 }
