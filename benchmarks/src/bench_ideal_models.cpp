@@ -350,19 +350,11 @@ template<std::size_t N> void register_size()
 void register_all()
 {
     register_size<1>();
-    register_size<2>();
     register_size<5>();
     register_size<10>();
     register_size<50>();
     register_size<100>();
-    register_size<200>();
-    register_size<300>();
-    register_size<400>();
     register_size<500>();
-    register_size<600>();
-    register_size<700>();
-    register_size<800>();
-    register_size<900>();
     register_size<1000>();
     register_size<5000>();
 }
