@@ -8,12 +8,20 @@
  * closed-form functions of temperature, referenced to a per-species
  * @f$(T_\mathrm{ref}, p_\mathrm{ref})@f$ state. This model assembles the mixture's
  * ideal Helmholtz energy as a sum of those per-species contributions (plus the
- * ideal entropy of mixing) through glis::eos::MultiFluidBase.
+ * ideal entropy of mixing).
+ *
+ * The model is deliberately *self-contained*: it derives directly from the EoS
+ * base classes and implements `calc_helmholtz`, `calc_helmholtz_density`, and
+ * `calc_partial_helmholtz` as plain functions whose pre-calculations and
+ * component loop are written out in full. This keeps the expression that
+ * [Enzyme](https://enzyme.mit.edu) differentiates as flat as possible &mdash; no
+ * CRTP indirection, no parameter-storage reflection &mdash; which makes the
+ * autodiff robust at every optimization level. Parameters are stored
+ * Array-of-Structs (one @ref Params per species).
  */
 
-#include "eoslab/core/attributes.hpp"
 #include "eoslab/core/concepts.hpp"
-#include "eoslab/core/multifluid_base.hpp"
+#include "eoslab/core/eos_base.hpp"
 #include "eoslab/core/numbers.hpp"
 #include "eoslab/core/xlnx.hpp"
 
@@ -22,50 +30,29 @@
 #include <concepts>
 #include <cstddef>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace glis::eos {
-
-namespace detail {
-/**
- * @brief Stored per-species parameters of the constant-@f$c_p@f$ model.
- *
- * These are the pre-computed quantities the kernels actually consume; they are
- * derived once, at construction, from the natural inputs in
- * glis::eos::ConstantCp::SpeciesInput. Must remain an all-`double` aggregate so
- * glis::eos::ParameterStorage can reflect over it.
- */
-struct ConstantCpParams {
-    double T_ref;      ///< Reference temperature @f$T_\mathrm{ref}@f$ [K].
-    double R_ln_c_ref; ///< @f$R\ln c_\mathrm{ref}@f$ [J/(mol K)].
-    double c_p;        ///< Isobaric molar heat capacity @f$c_p@f$ [J/(mol K)].
-    double ln_T_ref;   ///< @f$\ln T_\mathrm{ref}@f$ [-].
-    double h_ref;      ///< Reference molar enthalpy @f$h_\mathrm{ref}@f$ [J/mol].
-    double s_ref;      ///< Reference molar entropy @f$s_\mathrm{ref}@f$ [J/(mol K)].
-};
-} // namespace detail
 
 /**
  * @brief Ideal-gas equation of state with a constant isobaric molar heat
  *        capacity per species.
  *
  * Construct it from a per-species list of natural reference data
- * (SpeciesInput); the constructor performs the pre-calculations and forwards the
- * stored parameters to glis::eos::MultiFluidBase. Each species may use a
- * different reference temperature and pressure.
+ * (SpeciesInput); the constructor performs the pre-calculations and stores the
+ * derived per-species parameters. Each species may use a different reference
+ * temperature and pressure.
  *
  * @tparam N Component count, or @c std::dynamic_extent for a runtime size.
  */
-template<std::size_t N = std::dynamic_extent>
-class ConstantCp : public MultiFluidBase<ConstantCp<N>, detail::ConstantCpParams, N>, public BaseIdealEoS {
-    using Base = MultiFluidBase<ConstantCp<N>, detail::ConstantCpParams, N>;
-
+template<std::size_t N = std::dynamic_extent> class ConstantCp : public BaseEoS<N>, public BaseIdealEoS {
 public:
     /**
      * @brief Natural per-species reference data supplied by the user.
      *
-     * The constructor turns these into the stored detail::ConstantCpParams. The
-     * reference molar concentration is *not* supplied directly; it is computed as
+     * The constructor turns these into the stored @ref Params. The reference
+     * molar concentration is *not* supplied directly; it is computed as
      * @f$c_\mathrm{ref} = p_\mathrm{ref} / (R\,T_\mathrm{ref})@f$.
      */
     struct SpeciesInput {
@@ -74,18 +61,6 @@ public:
         double c_p;   ///< Isobaric molar heat capacity @f$c_p@f$ [J/(mol K)].
         double h_ref; ///< Reference molar enthalpy @f$h_\mathrm{ref}@f$ [J/mol].
         double s_ref; ///< Reference molar entropy @f$s_\mathrm{ref}@f$ [J/(mol K)].
-    };
-
-    /// @brief Pre-calculation cached for the molar (c, x, T) kernel.
-    template<std::floating_point Number> struct MolarPre {
-        Number TlnT;  ///< @f$T\ln T@f$.
-        Number RTlnC; ///< @f$R\,T\ln c@f$ (using the total molar concentration).
-    };
-
-    /// @brief Pre-calculation cached for the density (rho_i, T) kernel.
-    template<std::floating_point Number> struct DensityPre {
-        Number TlnT;  ///< @f$T\ln T@f$.
-        Number RTlnC; ///< @f$R\,T\ln\!\left(\sum_i \rho_i\right)@f$.
     };
 
     /**
@@ -97,8 +72,10 @@ public:
      */
     explicit ConstantCp(const std::array<SpeciesInput, N>& inputs)
         requires(N != std::dynamic_extent)
-        : Base(to_param_array(inputs))
     {
+        for (std::size_t i = 0; i < N; ++i) {
+            params_[i] = to_params(inputs[i]);
+        }
     }
 
     /**
@@ -111,83 +88,114 @@ public:
      */
     explicit ConstantCp(std::span<const SpeciesInput> inputs)
         requires(N == std::dynamic_extent)
-        : Base(std::span<const detail::ConstantCpParams>(to_param_vector(inputs)))
+        : BaseEoS<N>(inputs.size())
     {
+        params_.reserve(inputs.size());
+        for (const SpeciesInput& in : inputs) {
+            params_.push_back(to_params(in));
+        }
     }
 
     /**
-     * @brief Pre-calculation hoisted out of the molar component loop.
+     * @brief Total molar Helmholtz energy @f$a = \sum_i a_i@f$.
      * @param c Molar concentration [mol/m^3].
+     * @param x Mole-fraction array [-].
      * @param T Temperature [K].
+     * @return Molar Helmholtz energy [J/mol].
      */
-    template<std::floating_point Number>
-    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE MolarPre<Number> perform_pre_calculations(Number c, const Number* /*x*/,
-                                                                                   Number T) const
+    template<std::floating_point Number> [[nodiscard]] Number calc_helmholtz(Number c, const Number* x, Number T) const
     {
-        return MolarPre<Number>{T * std::log(T), ideal_gas_constant<Number> * T * std::log(c)};
+        const Number R = ideal_gas_constant<Number>;
+        // Pre-calculations hoisted out of the component loop.
+        const Number TlnT = T * std::log(T);
+        const Number RTlnC = R * T * std::log(c);
+
+        Number a{0};
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            const Params& p = params_[i];
+            a += (Number{2} * R * T * xlnx<0>(x[i])) +
+                 (x[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) + RTlnC -
+                          (T * p.R_ln_c_ref) + ((R - p.c_p) * TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        }
+        return a;
     }
 
     /**
-     * @brief Pre-calculation hoisted out of the density component loop.
+     * @brief Total Helmholtz energy density @f$\Psi = \sum_i \Psi_i@f$.
      * @param rho_i Partial molar concentrations [mol/m^3].
      * @param T     Temperature [K].
+     * @return Helmholtz energy density [J/m^3].
      */
     template<std::floating_point Number>
-    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE DensityPre<Number> perform_pre_calculations(const Number* rho_i,
-                                                                                     Number T) const
+    [[nodiscard]] Number calc_helmholtz_density(const Number* rho_i, Number T) const
     {
+        const Number R = ideal_gas_constant<Number>;
+        // c = sum_i rho_i, then the hoisted pre-calculations.
         Number c{0};
-        this->for_each_component([&](std::size_t i) { c += rho_i[i]; });
-        return DensityPre<Number>{T * std::log(T), ideal_gas_constant<Number> * T * std::log(c)};
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            c += rho_i[i];
+        }
+        const Number TlnT = T * std::log(T);
+        const Number RTlnC = R * T * std::log(c);
+
+        Number psi{0};
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            const Params& p = params_[i];
+            psi += (Number{2} * R * T * xlnx(rho_i[i])) +
+                   (rho_i[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) - RTlnC -
+                                (T * p.R_ln_c_ref) + ((R - p.c_p) * TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        }
+        return psi;
     }
 
     /**
-     * @brief Species @p i 's contribution to the molar Helmholtz energy.
-     * @param x   Mole-fraction array [-].
-     * @param T   Temperature [K].
-     * @param i   Species index.
-     * @param p   Stored parameters of species @p i.
-     * @param pre Cached molar pre-calculation.
-     */
-    template<std::floating_point Number>
-    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE Number calc_helmholtz_i(Number /*c*/, const Number* x, Number T, std::size_t i,
-                                                                 const detail::ConstantCpParams& p,
-                                                                 const MolarPre<Number>& pre) const
-    {
-        const Number R = ideal_gas_constant<Number>;
-        // TODO: test how changing the `xlnx` continuity template parameter affects the calculation of the chemical
-        // potential (computed by differentiating the Helmholtz energy w.r.t. each `rho_i`).
-        return (2 * R * T * xlnx<0>(x[i])) +
-               (x[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) + pre.RTlnC -
-                        (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
-    }
-
-    /**
-     * @brief Species @p i 's contribution to the Helmholtz energy density.
+     * @brief Per-component Helmholtz energy density, @f$\text{out}[i] = \Psi_i@f$.
      * @param rho_i Partial molar concentrations [mol/m^3].
      * @param T     Temperature [K].
-     * @param i     Species index.
-     * @param p     Stored parameters of species @p i.
-     * @param pre   Cached density pre-calculation.
+     * @param[out] out Per-component Helmholtz energy density [J/m^3]; length `size()`.
      */
-    template<std::floating_point Number>
-    [[nodiscard]] GLIS_EOS_ALWAYS_INLINE Number calc_helmholtz_density_i(const Number* rho_i, Number T, std::size_t i,
-                                                                         const detail::ConstantCpParams& p,
-                                                                         const DensityPre<Number>& pre) const
+    template<std::floating_point Number> void calc_partial_helmholtz(const Number* rho_i, Number T, Number* out) const
     {
         const Number R = ideal_gas_constant<Number>;
-        return (2 * R * T * xlnx(rho_i[i])) +
-               (rho_i[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) - pre.RTlnC -
-                            (T * p.R_ln_c_ref) + ((R - p.c_p) * pre.TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        Number c{0};
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            c += rho_i[i];
+        }
+        const Number TlnT = T * std::log(T);
+        const Number RTlnC = R * T * std::log(c);
+
+        for (std::size_t i = 0; i < this->size(); ++i) {
+            const Params& p = params_[i];
+            out[i] = (Number{2} * R * T * xlnx(rho_i[i])) +
+                     (rho_i[i] * (p.h_ref + (p.c_p * (T - p.T_ref)) - (T * p.s_ref) + (p.c_p * T * p.ln_T_ref) - RTlnC -
+                                  (T * p.R_ln_c_ref) + ((R - p.c_p) * TlnT) - (R * T * p.ln_T_ref) - (R * T)));
+        }
     }
 
 private:
+    /**
+     * @brief Stored (pre-computed) per-species parameters the kernels consume.
+     *
+     * Derived once, at construction, from the natural SpeciesInput.
+     */
+    struct Params {
+        double T_ref;      ///< Reference temperature @f$T_\mathrm{ref}@f$ [K].
+        double R_ln_c_ref; ///< @f$R\ln c_\mathrm{ref}@f$ [J/(mol K)].
+        double c_p;        ///< Isobaric molar heat capacity @f$c_p@f$ [J/(mol K)].
+        double ln_T_ref;   ///< @f$\ln T_\mathrm{ref}@f$ [-].
+        double h_ref;      ///< Reference molar enthalpy @f$h_\mathrm{ref}@f$ [J/mol].
+        double s_ref;      ///< Reference molar entropy @f$s_\mathrm{ref}@f$ [J/(mol K)].
+    };
+
+    /// @brief Array-of-Structs parameter storage: one @ref Params per species.
+    using Storage = std::conditional_t<N == std::dynamic_extent, std::vector<Params>, std::array<Params, N>>;
+
     /// @brief Convert one set of natural inputs into the stored parameters.
-    [[nodiscard]] static detail::ConstantCpParams to_params(const SpeciesInput& in)
+    [[nodiscard]] static Params to_params(const SpeciesInput& in)
     {
         constexpr double R = ideal_gas_constant<double>;
         const double c_ref = in.p_ref / (R * in.T_ref);
-        return detail::ConstantCpParams{
+        return Params{
             .T_ref = in.T_ref,
             .R_ln_c_ref = R * std::log(c_ref),
             .c_p = in.c_p,
@@ -197,27 +205,7 @@ private:
         };
     }
 
-    /// @brief Transform a fixed-size input list into the stored parameter array.
-    [[nodiscard]] static std::array<detail::ConstantCpParams, N>
-    to_param_array(const std::array<SpeciesInput, N>& inputs)
-    {
-        std::array<detail::ConstantCpParams, N> out{};
-        for (std::size_t i = 0; i < N; ++i) {
-            out[i] = to_params(inputs[i]);
-        }
-        return out;
-    }
-
-    /// @brief Transform a runtime-sized input list into the stored parameters.
-    [[nodiscard]] static std::vector<detail::ConstantCpParams> to_param_vector(std::span<const SpeciesInput> inputs)
-    {
-        std::vector<detail::ConstantCpParams> out;
-        out.reserve(inputs.size());
-        for (const SpeciesInput& in : inputs) {
-            out.push_back(to_params(in));
-        }
-        return out;
-    }
+    Storage params_{}; ///< Per-species stored parameters (AoS).
 };
 
 static_assert(IdealEoS<ConstantCp<2>>, "ConstantCp must satisfy the IdealEoS concept.");
