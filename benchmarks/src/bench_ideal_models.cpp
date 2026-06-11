@@ -4,14 +4,9 @@
 //
 // What is covered
 // ---------------
-//   * Both bundled ideal models, in both parameter layouts:
-//       ConstantCp_AoS / ConstantCp_SoA   and   Nasa7_AoS / Nasa7_SoA
-//     (the *_SoA classes are storage-only duplicates; benchmarking them against
-//     the Array-of-Structs originals is the point of Task 4.)
-//   * Every public core calculation. For the three reverse-mode gradient
-//     routines (chemical potential, log-fugacity coefficient, fugacity) both the
-//     reverse-mode original (`*_rev`) and the multi-pass forward-mode alternative
-//     (`*_fwd`) are benchmarked side by side.
+//   * Both bundled ideal models (ConstantCp and Nasa7), each in its
+//     compile-time-sized ("Static") and runtime-sized ("Dynamic") form.
+//   * Every public core calculation.
 //
 // Each ideal model is paired with NoResidual, so the EoS is a pure ideal gas.
 // Consequently the residual-only properties (pressure, dp_dc, dp_dT) are cheap
@@ -21,19 +16,16 @@
 //
 // Output layout
 // -------------
-// A custom driver groups the *meaningful* comparisons together. The nesting is
-//     size N  ->  calculation  ->  model family  ->  { static, dynamic } x { SoA, AoS }
-// so each calculation produces a block of exactly four rows -- static SoA,
-// static AoS, dynamic SoA, dynamic AoS -- which is the natural unit to read
-// (SoA-vs-AoS and static-vs-dynamic for one calculation at one size). A large
-// banner marks each size and a small heading marks each calculation/family block.
+// A custom driver groups the comparable rows together. The nesting is
+//     size N  ->  calculation  ->  model family  ->  { static, dynamic }
+// so each calculation produces a block of two rows -- static, dynamic -- which
+// is the natural unit to read. A large banner marks each size and a small
+// heading marks each calculation/family block.
 //
 #include "eoslab/core/core_calculations.hpp"
 #include "eoslab/core/eos_pair.hpp"
 #include "eoslab/ideal_models/const_cp.hpp"
-#include "eoslab/ideal_models/const_cp_soa.hpp"
 #include "eoslab/ideal_models/nasa7.hpp"
-#include "eoslab/ideal_models/nasa7_soa.hpp"
 #include "eoslab/residual_models/no_residual.hpp"
 
 #include <array>
@@ -180,12 +172,9 @@ enum class Calc {
     cv,
     cp,
     sound_speed_sq,
-    chemical_potential_rev,
-    chemical_potential_fwd,
-    log_fugacity_coeff_rev,
-    log_fugacity_coeff_fwd,
-    fugacity_rev,
-    fugacity_fwd,
+    chemical_potential,
+    log_fugacity_coeff,
+    fugacity,
 };
 
 struct CalcInfo {
@@ -193,7 +182,7 @@ struct CalcInfo {
     const char* name;
 };
 
-constexpr std::array<CalcInfo, 17> kCalcs{{
+constexpr std::array<CalcInfo, 14> kCalcs{{
     {Calc::helmholtz, "helmholtz"},
     {Calc::pressure, "pressure"},
     {Calc::internal_energy, "internal_energy"},
@@ -205,15 +194,12 @@ constexpr std::array<CalcInfo, 17> kCalcs{{
     {Calc::cv, "cv"},
     {Calc::cp, "cp"},
     {Calc::sound_speed_sq, "sound_speed_sq"},
-    {Calc::chemical_potential_rev, "chemical_potential_rev"},
-    {Calc::chemical_potential_fwd, "chemical_potential_fwd"},
-    {Calc::log_fugacity_coeff_rev, "log_fugacity_coeff_rev"},
-    {Calc::log_fugacity_coeff_fwd, "log_fugacity_coeff_fwd"},
-    {Calc::fugacity_rev, "fugacity_rev"},
-    {Calc::fugacity_fwd, "fugacity_fwd"},
+    {Calc::chemical_potential, "chemical_potential"},
+    {Calc::log_fugacity_coeff, "log_fugacity_coeff"},
+    {Calc::fugacity, "fugacity"},
 }};
 
-// The size sweep, reduced to the set requested in the spec.
+// The size sweep used by the grouped default run.
 constexpr std::array<std::size_t, 6> kSizes{1, 2, 10, 50, 100, 1000};
 
 // Heap-allocated benches kept alive for the whole process.
@@ -279,23 +265,14 @@ template<class B> void register_calc(const std::string& name, B* b, Calc calc)
     case Calc::sound_speed_sq:
         SCALAR(ge::calc_sound_speed_squared(b->eos, b->c, cspan<E>(b->x), b->T, b->molar_mass));
         break;
-    case Calc::chemical_potential_rev:
+    case Calc::chemical_potential:
         VOIDC(ge::calc_chemical_potential(b->eos, cspan<E>(b->rho), b->T, mspan<E>(b->out)));
         break;
-    case Calc::chemical_potential_fwd:
-        VOIDC(ge::calc_chemical_potential_fwd(b->eos, cspan<E>(b->rho), b->T, mspan<E>(b->out)));
-        break;
-    case Calc::log_fugacity_coeff_rev:
+    case Calc::log_fugacity_coeff:
         VOIDC(ge::calc_log_fugacity_coeff(b->eos, b->c, cspan<E>(b->x), b->T, cspan<E>(b->rho), mspan<E>(b->out)));
         break;
-    case Calc::log_fugacity_coeff_fwd:
-        VOIDC(ge::calc_log_fugacity_coeff_fwd(b->eos, b->c, cspan<E>(b->x), b->T, cspan<E>(b->rho), mspan<E>(b->out)));
-        break;
-    case Calc::fugacity_rev:
+    case Calc::fugacity:
         VOIDC(ge::calc_fugacity(b->eos, cspan<E>(b->rho), b->T, mspan<E>(b->out)));
-        break;
-    case Calc::fugacity_fwd:
-        VOIDC(ge::calc_fugacity_fwd(b->eos, cspan<E>(b->rho), b->T, mspan<E>(b->out)));
         break;
     }
 
@@ -304,46 +281,33 @@ template<class B> void register_calc(const std::string& name, B* b, Calc calc)
 }
 
 // ---------------------------------------------------------------------------
-// Register all four model variants for one compile-time size. The four
-// comparable rows of each calculation block are registered consecutively in the
-// order  static SoA, static AoS, dynamic SoA, dynamic AoS  so a single filtered
-// run prints them in that order.
+// Register both model families for one compile-time size. The two comparable
+// rows of each calculation block are registered consecutively in the order
+// static, dynamic so a single filtered run prints them in that order.
 // ---------------------------------------------------------------------------
 template<std::size_t N> void register_size()
 {
     constexpr std::size_t dyn = std::dynamic_extent;
 
-    auto cc_s_soa = std::make_shared<Bench<ge::ConstantCpSoA<N>, N>>(N, make_model<ge::ConstantCpSoA, N>(N));
-    auto cc_s_aos = std::make_shared<Bench<ge::ConstantCp<N>, N>>(N, make_model<ge::ConstantCp, N>(N));
-    auto cc_d_soa = std::make_shared<Bench<ge::ConstantCpSoA<dyn>, dyn>>(N, make_model<ge::ConstantCpSoA, dyn>(N));
-    auto cc_d_aos = std::make_shared<Bench<ge::ConstantCp<dyn>, dyn>>(N, make_model<ge::ConstantCp, dyn>(N));
-    auto n7_s_soa = std::make_shared<Bench<ge::Nasa7SoA<N>, N>>(N, make_model<ge::Nasa7SoA, N>(N));
-    auto n7_s_aos = std::make_shared<Bench<ge::Nasa7<N>, N>>(N, make_model<ge::Nasa7, N>(N));
-    auto n7_d_soa = std::make_shared<Bench<ge::Nasa7SoA<dyn>, dyn>>(N, make_model<ge::Nasa7SoA, dyn>(N));
-    auto n7_d_aos = std::make_shared<Bench<ge::Nasa7<dyn>, dyn>>(N, make_model<ge::Nasa7, dyn>(N));
+    auto cc_s = std::make_shared<Bench<ge::ConstantCp<N>, N>>(N, make_model<ge::ConstantCp, N>(N));
+    auto cc_d = std::make_shared<Bench<ge::ConstantCp<dyn>, dyn>>(N, make_model<ge::ConstantCp, dyn>(N));
+    auto n7_s = std::make_shared<Bench<ge::Nasa7<N>, N>>(N, make_model<ge::Nasa7, N>(N));
+    auto n7_d = std::make_shared<Bench<ge::Nasa7<dyn>, dyn>>(N, make_model<ge::Nasa7, dyn>(N));
 
-    g_keepalive.push_back(cc_s_soa);
-    g_keepalive.push_back(cc_s_aos);
-    g_keepalive.push_back(cc_d_soa);
-    g_keepalive.push_back(cc_d_aos);
-    g_keepalive.push_back(n7_s_soa);
-    g_keepalive.push_back(n7_s_aos);
-    g_keepalive.push_back(n7_d_soa);
-    g_keepalive.push_back(n7_d_aos);
+    g_keepalive.push_back(cc_s);
+    g_keepalive.push_back(cc_d);
+    g_keepalive.push_back(n7_s);
+    g_keepalive.push_back(n7_d);
 
     const std::string ns = std::to_string(N);
     for (const CalcInfo& ci : kCalcs) {
         const std::string suffix = "/N" + ns + "/";
-        // ConstantCp family: the four comparable rows, in display order.
-        register_calc("Static" + suffix + "ConstantCp_SoA/" + ci.name, cc_s_soa.get(), ci.id);
-        register_calc("Static" + suffix + "ConstantCp_AoS/" + ci.name, cc_s_aos.get(), ci.id);
-        register_calc("Dynamic" + suffix + "ConstantCp_SoA/" + ci.name, cc_d_soa.get(), ci.id);
-        register_calc("Dynamic" + suffix + "ConstantCp_AoS/" + ci.name, cc_d_aos.get(), ci.id);
-        // Nasa7 family: the four comparable rows, in display order.
-        register_calc("Static" + suffix + "Nasa7_SoA/" + ci.name, n7_s_soa.get(), ci.id);
-        register_calc("Static" + suffix + "Nasa7_AoS/" + ci.name, n7_s_aos.get(), ci.id);
-        register_calc("Dynamic" + suffix + "Nasa7_SoA/" + ci.name, n7_d_soa.get(), ci.id);
-        register_calc("Dynamic" + suffix + "Nasa7_AoS/" + ci.name, n7_d_aos.get(), ci.id);
+        // ConstantCp family: the two comparable rows, in display order.
+        register_calc("Static" + suffix + "ConstantCp/" + ci.name, cc_s.get(), ci.id);
+        register_calc("Dynamic" + suffix + "ConstantCp/" + ci.name, cc_d.get(), ci.id);
+        // Nasa7 family: the two comparable rows, in display order.
+        register_calc("Static" + suffix + "Nasa7/" + ci.name, n7_s.get(), ci.id);
+        register_calc("Dynamic" + suffix + "Nasa7/" + ci.name, n7_d.get(), ci.id);
     }
 }
 
@@ -390,7 +354,7 @@ void print_size_banner(std::size_t n)
 void print_calc_heading(const std::string& calc, const std::string& family, std::size_t n)
 {
     std::cout << "\n---- " << calc << "  [" << family << ", N = " << n << "] "
-              << "-- rows: static SoA, static AoS, dynamic SoA, dynamic AoS\n"
+              << "-- rows: static, dynamic\n"
               << std::flush;
 }
 
@@ -431,9 +395,9 @@ int main(int argc, char** argv)
         for (const CalcInfo& ci : kCalcs) {
             for (const char* family : families) {
                 print_calc_heading(ci.name, family, n);
-                // Match the four comparable rows for this (size, calc, family):
-                // both phases (Static/Dynamic) and both layouts (SoA/AoS).
-                const std::string spec = "/N" + std::to_string(n) + "/" + family + "_(SoA|AoS)/" + ci.name + "$";
+                // Match the two comparable rows for this (size, calc, family):
+                // both phases (Static/Dynamic).
+                const std::string spec = "/N" + std::to_string(n) + "/" + family + "/" + ci.name + "$";
                 benchmark::RunSpecifiedBenchmarks(&reporter, spec);
             }
         }
