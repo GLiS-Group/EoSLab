@@ -21,4 +21,5 @@
 #include "eoslab/core/xlnx.hpp"
 #include "eoslab/ideal_models/const_cp.hpp"
 #include "eoslab/ideal_models/nasa7.hpp"
+#include "eoslab/ideal_models/nasa9.hpp"
 #include "eoslab/residual_models/no_residual.hpp"
