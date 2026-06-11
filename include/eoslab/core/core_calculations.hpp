@@ -24,11 +24,13 @@
 #include "eoslab/core/numbers.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <span>
+#include <vector>
 
 // NOLINTBEGIN
 /// @cond INTERNAL
@@ -239,6 +241,19 @@ void calc_dPsi_drhoi(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, cons
         // `calc_Psi` accumulates the per-component Helmholtz density into a local
         // scalar, so there is no caller-visible intermediate buffer to shadow:
         // `rho_i` is the only active input and the gradient lands in `dPsi_drho`.
+        //
+        // The model `eos` is logically constant, but Enzyme's activity analysis
+        // fails to prove that the parameter storage read through it is inactive
+        // once that storage is large enough (~16+ doubles): it then computes a
+        // gradient w.r.t. the parameters and, with no shadow provided for an
+        // `enzyme_const` argument, writes that gradient in place — clobbering the
+        // model's parameters. We therefore pass `eos` as `enzyme_dup` with a
+        // zero-initialized scratch shadow so the (unwanted) parameter gradient is
+        // accumulated there and discarded, leaving the real parameters intact.
+        // alignas(EoS) std::byte eos_shadow[sizeof(EoS)] = {};
+        // __enzyme_autodiff<Number>((void*)calc_Psi<EoS, Number>, enzyme_dup, &eos,
+        //                           reinterpret_cast<EoS*>(static_cast<void*>(eos_shadow)), enzyme_dup, rho_i, dPsi_drho,
+        //                           enzyme_const, T);
         __enzyme_autodiff<Number>((void*)calc_Psi<EoS, Number>, enzyme_const, &eos, enzyme_dup, rho_i, dPsi_drho,
                                   enzyme_const, T);
         return;
@@ -246,6 +261,69 @@ void calc_dPsi_drhoi(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, cons
     else {
         static_assert(false, "Higher order derivatives are not implemented (yet?) because they require tensors!");
         return;
+    }
+}
+
+/**
+ * @internal
+ * @brief Forward-mode alternative to detail::calc_dPsi_drhoi: the gradient
+ *        @f$\partial\Psi/\partial\rho_i@f$ computed with one Enzyme *forward*-mode
+ *        pass per component instead of a single reverse-mode pass.
+ *
+ * For a scalar output @f$\Psi(\rho)@f$ a forward-mode pass seeded with the unit
+ * direction @f$e_j@f$ returns exactly @f$\partial\Psi/\partial\rho_j@f$, so the
+ * full gradient is recovered with `eos.size()` passes. This is the natural
+ * comparison point for the reverse-mode routine: reverse computes the whole
+ * gradient in one pass, forward needs @f$n@f$ passes, and which is faster depends
+ * on @f$n@f$ and on how well Enzyme handles each mode for a given model.
+ *
+ * Unlike the reverse-mode routine, the model @p eos is passed as
+ * @c enzyme_const: in forward mode a constant input simply carries a zero tangent
+ * and is never written, so no parameter-gradient scratch shadow is required.
+ *
+ * @warning Like the reverse-mode routine this **accumulates** into @p dPsi_drho,
+ *          so the caller must zero it first (allowing the ideal and residual
+ *          contributions to be summed in place).
+ *
+ * @param  eos       A single-contribution model (ideal or residual).
+ * @param  rho_i     Partial molar concentrations [mol/m^3].
+ * @param  T         Temperature [K].
+ * @param  dPsi_drho Output gradient (length `eos.size()`), accumulated [J/mol].
+ * @param  seed      Scratch direction buffer (length `eos.size()`); must be all
+ *                   zero on entry and is left all zero on return.
+ */
+template<EquationOfState EoS, std::floating_point Number>
+void calc_dPsi_drhoi_fwd(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, const Number T,
+                         Number* GLIS_EOS_RESTRICT dPsi_drho, Number* GLIS_EOS_RESTRICT seed)
+{
+    const std::size_t n = eos.size();
+    for (std::size_t j = 0; j < n; ++j) {
+        seed[j] = Number{1};
+        dPsi_drho[j] += __enzyme_fwddiff<Number>((void*)calc_Psi<EoS, Number>, enzyme_const, &eos, enzyme_dup, rho_i,
+                                                 seed, enzyme_const, T);
+        seed[j] = Number{0};
+    }
+}
+
+/**
+ * @internal
+ * @brief Allocate a zeroed direction-seed buffer and accumulate the forward-mode
+ *        gradient (calc_dPsi_drhoi_fwd) into @p out.
+ *
+ * Picks stack storage for a compile-time component count and a heap buffer for a
+ * runtime count, then forwards to detail::calc_dPsi_drhoi_fwd. Factored out so
+ * the public `*_fwd` property routines do not each repeat the seed bookkeeping.
+ */
+template<EquationOfState EoS, std::floating_point Number, std::size_t N>
+void accumulate_dPsi_drhoi_fwd(const EoS& eos, std::span<const Number, N> rho_i, const Number T, Number* out)
+{
+    if constexpr (N == std::dynamic_extent) {
+        std::vector<Number> seed(rho_i.size(), Number{0});
+        calc_dPsi_drhoi_fwd(eos, rho_i.data(), T, out, seed.data());
+    }
+    else {
+        std::array<Number, N> seed{};
+        calc_dPsi_drhoi_fwd(eos, rho_i.data(), T, out, seed.data());
     }
 }
 } // namespace detail
@@ -547,6 +625,33 @@ void calc_chemical_potential(const EoS<Ideal, Residual>& eos, std::span<const Nu
 }
 
 /**
+ * @brief Forward-mode alternative to calc_chemical_potential.
+ *
+ * Computes the identical chemical potentials, but obtains each contribution's
+ * @f$\partial\Psi/\partial\rho_i@f$ gradient with `eos.size()` Enzyme
+ * forward-mode passes (detail::accumulate_dPsi_drhoi_fwd) instead of a single
+ * reverse-mode pass. Provided so the two differentiation strategies can be
+ * benchmarked against each other.
+ *
+ * @param eos The equation of state.
+ * @param rho_i Partial molar concentrations [mol/m^3].
+ * @param T   Temperature [K].
+ * @param[out] chemical_potential Output chemical potentials [J/mol]. Overwritten (zeroed then filled).
+ * @pre `rho_i.size() == eos.size()`
+ * @pre `chemical_potential.size() == eos.size()`
+ */
+template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
+void calc_chemical_potential_fwd(const EoS<Ideal, Residual>& eos, std::span<const Number, N> rho_i, const Number T,
+                                 std::span<Number, N> chemical_potential)
+{
+    assert(rho_i.size() == eos.size());
+    assert(chemical_potential.size() == eos.size());
+    std::fill(chemical_potential.begin(), chemical_potential.end(), Number{0});
+    detail::accumulate_dPsi_drhoi_fwd(eos.ideal(), rho_i, T, chemical_potential.data());
+    detail::accumulate_dPsi_drhoi_fwd(eos.residual(), rho_i, T, chemical_potential.data());
+}
+
+/**
  * @brief Natural log of the fugacity coefficients,
  *        @f$\ln\varphi_i = \mu_i^{\text{res}}/(RT) - \ln Z@f$.
  * @param eos The equation of state.
@@ -577,6 +682,40 @@ void calc_log_fugacity_coeff(const EoS<Ideal, Residual>& eos, const Number c, st
 }
 
 /**
+ * @brief Forward-mode alternative to calc_log_fugacity_coeff.
+ *
+ * Identical result; the residual chemical-potential gradient is obtained with
+ * `eos.size()` Enzyme forward-mode passes instead of one reverse-mode pass.
+ * Provided for benchmarking the two strategies.
+ *
+ * @param eos The equation of state.
+ * @param c   Molar concentration [mol/m^3].
+ * @param x   Mole fractions [-].
+ * @param T   Temperature [K].
+ * @param rho_i Partial molar concentrations [mol/m^3] (should equal `x*c`).
+ * @param[out] log_fug_coeff Output @f$\ln\varphi_i@f$ [-] (length `eos.size()`).
+ *             Overwritten (zeroed then filled).
+ */
+template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
+void calc_log_fugacity_coeff_fwd(const EoS<Ideal, Residual>& eos, const Number c, std::span<const Number, N> x,
+                                 const Number T, const std::span<const Number, N> rho_i,
+                                 std::span<Number, N> log_fug_coeff)
+{
+    const Number invT = Number{1} / T;
+    const Number Z = Number{1} + detail::calc_lambda<0, 1>(eos.residual(), c, x.data(), invT);
+    const Number lnZ = std::log(Z);
+
+    std::fill(log_fug_coeff.begin(), log_fug_coeff.end(), Number{0});
+    detail::accumulate_dPsi_drhoi_fwd(eos.residual(), rho_i, T, log_fug_coeff.data());
+    constexpr Number R = ideal_gas_constant<Number>;
+    const Number invRT = Number{1} / (R * T);
+    for (auto& ln_phi_i : log_fug_coeff) {
+        ln_phi_i *= invRT;
+        ln_phi_i -= lnZ;
+    }
+}
+
+/**
  * @brief Fugacities @f$f_i = \rho_i RT\,\exp(\mu_i^{\text{res}}/(RT))@f$.
  * @param eos The equation of state.
  * @param rho_i Partial molar concentrations [mol/m^3] (length `eos.size()`).
@@ -592,6 +731,33 @@ void calc_fugacity(const EoS<Ideal, Residual>& eos, std::span<const Number, N> r
     // the call `fugacity[idx]` holds the residual chemical potential mu_i^res.
     std::fill(fugacity.begin(), fugacity.end(), Number{0});
     detail::calc_dPsi_drhoi<1>(eos.residual(), rho_i.data(), T, fugacity.data());
+    constexpr Number R = ideal_gas_constant<Number>;
+    const Number RT = R * T;
+    const Number invRT = Number{1} / RT;
+    for (std::size_t idx = 0; idx < fugacity.size(); ++idx) {
+        fugacity[idx] = rho_i[idx] * RT * std::exp(fugacity[idx] * invRT);
+    }
+}
+
+/**
+ * @brief Forward-mode alternative to calc_fugacity.
+ *
+ * Identical result; the residual chemical-potential gradient is obtained with
+ * `eos.size()` Enzyme forward-mode passes instead of one reverse-mode pass.
+ * Provided for benchmarking the two strategies.
+ *
+ * @param eos The equation of state.
+ * @param rho_i Partial molar concentrations [mol/m^3] (length `eos.size()`).
+ * @param T   Temperature [K].
+ * @param[out] fugacity Output fugacities [Pa] (length `eos.size()`).
+ *             Overwritten (zeroed then filled).
+ */
+template<IdealEoS Ideal, ResidualEoS Residual, std::floating_point Number, std::size_t N>
+void calc_fugacity_fwd(const EoS<Ideal, Residual>& eos, std::span<const Number, N> rho_i, const Number T,
+                       std::span<Number, N> fugacity)
+{
+    std::fill(fugacity.begin(), fugacity.end(), Number{0});
+    detail::accumulate_dPsi_drhoi_fwd(eos.residual(), rho_i, T, fugacity.data());
     constexpr Number R = ideal_gas_constant<Number>;
     const Number RT = R * T;
     const Number invRT = Number{1} / RT;
