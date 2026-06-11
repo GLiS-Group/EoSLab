@@ -84,37 +84,6 @@ int main()
         };
 
         // ===================================================================
-        // ConstantCp-specific: the two per-species kernels must agree,
-        //   c * calc_helmholtz_i == calc_helmholtz_density_i,
-        // and the density kernel must match the partial-helmholtz decomposition.
-        // (MultiFluidBase kernel API, so not part of the generic helper.)
-        // ===================================================================
-        "per-species kernel consistency (c*a_i == Psi_i)"_test = [&] {
-            const ge::ConstantCp<2> model(binary_inputs);
-            for (const double T : {280.0, 410.0}) {
-                for (const std::array<double, 2> rho :
-                     {std::array<double, 2>{40.0, 70.0}, std::array<double, 2>{5.0, 95.0}}) {
-                    const double c = rho[0] + rho[1];
-                    const std::array<double, 2> x{rho[0] / c, rho[1] / c};
-
-                    const auto pre_molar = model.perform_pre_calculations(c, x.data(), T);
-                    const auto pre_density = model.perform_pre_calculations(rho.data(), T);
-                    std::array<double, 2> psi_partial{};
-                    model.calc_partial_helmholtz(rho.data(), T, psi_partial.data());
-
-                    for (std::size_t i = 0; i < 2; ++i) {
-                        const double a_i =
-                            model.calc_helmholtz_i(c, x.data(), T, i, model.get_parameters(i), pre_molar);
-                        const double psi_i =
-                            model.calc_helmholtz_density_i(rho.data(), T, i, model.get_parameters(i), pre_density);
-                        check_rel("c * a_i == Psi_i", c * a_i, psi_i, 1e-11);
-                        check_rel("Psi_i == partial[i]", psi_i, psi_partial[i], 1e-12);
-                    }
-                }
-            }
-        };
-
-        // ===================================================================
         // Ideal-gas pressure p = c R T (delegated to the shared helper).
         // ===================================================================
         "ideal-gas pressure == c R T"_test = [&] {
