@@ -33,7 +33,6 @@
 // NOLINTBEGIN
 /// @cond INTERNAL
 // Enzyme autodiff requires a few global definitions
-// TODO: Make these `const` to please clangd?? Try making them const after writing tests to see.
 inline int enzyme_dup;
 inline int enzyme_dupnoneed;
 inline int enzyme_out;
@@ -229,7 +228,7 @@ template<int i, EquationOfState EoS, std::floating_point Number>
 void calc_dPsi_drhoi(const EoS& eos, const Number* GLIS_EOS_RESTRICT rho_i, const Number T,
                      Number* GLIS_EOS_RESTRICT dPsi_drho)
 {
-    // TODO: only implemented for 1 derivative because higher order would require tensors!
+    // Only implemented for 1 derivative because higher order would require tensors.
     static_assert(i > 0, "The template parameter `i` must be positive. It represents the number of derivatives with "
                          "respect to each `rho_i`. Use `calc_Psi()` for the '0th' derivative.");
     // NOTE: Enzyme reverse mode ACCUMULATES into `dPsi_drho`, so the caller must

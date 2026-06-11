@@ -124,3 +124,10 @@ if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Benchmarks for the bundled ideal models (off by default; needs Google
+# Benchmark). Build with a release preset for meaningful numbers.
+option(BUILD_BENCHMARKS "Build the ideal-model benchmarks (requires Google Benchmark)" OFF)
+if(BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
