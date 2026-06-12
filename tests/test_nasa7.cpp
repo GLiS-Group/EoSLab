@@ -55,19 +55,39 @@ template<std::size_t N> auto make_nasa7_eos(const std::array<Input<N>, N>& in)
 // O2. The two species deliberately use *different* reference temperatures and
 // pressures to exercise per-species reference handling.
 constexpr std::array<Input<2>, 2> binary_inputs{{
-    {/*a0*/ .a0=3.53100528, /*a1*/ .a1=-1.23660988e-4, /*a2*/ .a2=-5.02999433e-7, /*a3*/ .a3=2.43530612e-9, /*a4*/ .a4=-1.40881235e-12,
-     /*a5*/ .a5=-1046.97628, /*a6*/ .a6=2.96747038, /*T_ref*/ .T_ref=300.0, /*p_ref*/ .p_ref=1.0e5},
-    {/*a0*/ .a0=3.78245636, /*a1*/ .a1=-2.99673416e-3, /*a2*/ .a2=9.84730201e-6, /*a3*/ .a3=-9.68129509e-9, /*a4*/ .a4=3.24372837e-12,
-     /*a5*/ .a5=-1063.94356, /*a6*/ .a6=3.65767573, /*T_ref*/ .T_ref=320.0, /*p_ref*/ .p_ref=9.0e4},
+    {/*a0*/ .a0 = 3.53100528,
+     /*a1*/ .a1 = -1.23660988e-4,
+     /*a2*/ .a2 = -5.02999433e-7,
+     /*a3*/ .a3 = 2.43530612e-9,
+     /*a4*/ .a4 = -1.40881235e-12,
+     /*a5*/ .a5 = -1046.97628,
+     /*a6*/ .a6 = 2.96747038,
+     /*T_ref*/ .T_ref = 300.0,
+     /*p_ref*/ .p_ref = 1.0e5},
+    {/*a0*/ .a0 = 3.78245636,
+     /*a1*/ .a1 = -2.99673416e-3,
+     /*a2*/ .a2 = 9.84730201e-6,
+     /*a3*/ .a3 = -9.68129509e-9,
+     /*a4*/ .a4 = 3.24372837e-12,
+     /*a5*/ .a5 = -1063.94356,
+     /*a6*/ .a6 = 3.65767573,
+     /*T_ref*/ .T_ref = 320.0,
+     /*p_ref*/ .p_ref = 9.0e4},
 }};
 
 // Single-species reference data (N2) for the caloric checks.
 constexpr double T_ref = 300.0;
 constexpr double p_ref = 1.0e5;
 
-constexpr std::array<Input<1>, 1> unary_inputs{{{/*a0*/ .a0=3.53100528, /*a1*/ .a1=-1.23660988e-4, /*a2*/ .a2=-5.02999433e-7,
-                                                 /*a3*/ .a3=2.43530612e-9, /*a4*/ .a4=-1.40881235e-12, /*a5*/ .a5=-1046.97628,
-                                                 /*a6*/ .a6=2.96747038, .T_ref=T_ref, .p_ref=p_ref}}};
+constexpr std::array<Input<1>, 1> unary_inputs{{{/*a0*/ .a0 = 3.53100528,
+                                                 /*a1*/ .a1 = -1.23660988e-4,
+                                                 /*a2*/ .a2 = -5.02999433e-7,
+                                                 /*a3*/ .a3 = 2.43530612e-9,
+                                                 /*a4*/ .a4 = -1.40881235e-12,
+                                                 /*a5*/ .a5 = -1046.97628,
+                                                 /*a6*/ .a6 = 2.96747038,
+                                                 .T_ref = T_ref,
+                                                 .p_ref = p_ref}}};
 
 // --- Closed-form NASA-7 reference relations (in double) --------------------
 double nasa7_cp(const Input<1>& in, double T)

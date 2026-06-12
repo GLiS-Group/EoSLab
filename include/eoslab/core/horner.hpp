@@ -6,8 +6,8 @@
 
 #include "eoslab/core/attributes.hpp"
 
-#include <concepts>
 #include <array>
+#include <concepts>
 
 namespace glis::eos {
 /**
