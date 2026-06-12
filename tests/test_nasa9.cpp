@@ -62,11 +62,27 @@ template<std::size_t N> auto make_nasa9_eos(const std::array<Input<N>, N>& in)
 // and O2. The two species deliberately use *different* reference temperatures
 // and pressures to exercise per-species reference handling.
 constexpr std::array<Input<2>, 2> binary_inputs{{
-    {.a0 = 2.210371497e4, .a1 = -3.818461820e2, .a2 = 6.082738360, .a3 = -8.530914410e-3, .a4 = 1.384646189e-5,
-     .a5 = -9.625793620e-9, .a6 = 2.519705809e-12, .a7 = 7.108460860e2, .a8 = -1.076003744e1, .T_ref = 300.0,
+    {.a0 = 2.210371497e4,
+     .a1 = -3.818461820e2,
+     .a2 = 6.082738360,
+     .a3 = -8.530914410e-3,
+     .a4 = 1.384646189e-5,
+     .a5 = -9.625793620e-9,
+     .a6 = 2.519705809e-12,
+     .a7 = 7.108460860e2,
+     .a8 = -1.076003744e1,
+     .T_ref = 300.0,
      .p_ref = 1.0e5},
-    {.a0 = -3.425563420e4, .a1 = 4.847000970e2, .a2 = 1.119010961, .a3 = 4.293889240e-3, .a4 = -6.836300520e-7,
-     .a5 = -2.023372700e-9, .a6 = 1.039040018e-12, .a7 = -3.391454870e3, .a8 = 1.849699470e1, .T_ref = 320.0,
+    {.a0 = -3.425563420e4,
+     .a1 = 4.847000970e2,
+     .a2 = 1.119010961,
+     .a3 = 4.293889240e-3,
+     .a4 = -6.836300520e-7,
+     .a5 = -2.023372700e-9,
+     .a6 = 1.039040018e-12,
+     .a7 = -3.391454870e3,
+     .a8 = 1.849699470e1,
+     .T_ref = 320.0,
      .p_ref = 9.0e4},
 }};
 
@@ -74,10 +90,17 @@ constexpr std::array<Input<2>, 2> binary_inputs{{
 constexpr double T_ref = 300.0;
 constexpr double p_ref = 1.0e5;
 
-constexpr std::array<Input<1>, 1> unary_inputs{
-    {{.a0 = 2.210371497e4, .a1 = -3.818461820e2, .a2 = 6.082738360, .a3 = -8.530914410e-3, .a4 = 1.384646189e-5,
-      .a5 = -9.625793620e-9, .a6 = 2.519705809e-12, .a7 = 7.108460860e2, .a8 = -1.076003744e1, .T_ref = T_ref,
-      .p_ref = p_ref}}};
+constexpr std::array<Input<1>, 1> unary_inputs{{{.a0 = 2.210371497e4,
+                                                 .a1 = -3.818461820e2,
+                                                 .a2 = 6.082738360,
+                                                 .a3 = -8.530914410e-3,
+                                                 .a4 = 1.384646189e-5,
+                                                 .a5 = -9.625793620e-9,
+                                                 .a6 = 2.519705809e-12,
+                                                 .a7 = 7.108460860e2,
+                                                 .a8 = -1.076003744e1,
+                                                 .T_ref = T_ref,
+                                                 .p_ref = p_ref}}};
 
 // --- Closed-form NASA-9 reference relations (in double) --------------------
 double nasa9_cp(const Input<1>& in, double T)
@@ -107,8 +130,17 @@ double nasa9_entropy_std(const Input<1>& in, double T)
 // NASA-9 coefficients (a2..a8) set to the NASA-7 coefficients (a0..a6).
 template<std::size_t N> Input<N> as_nasa9(const typename ge::Nasa7<N>::SpeciesInput& in)
 {
-    return Input<N>{.a0 = 0.0, .a1 = 0.0, .a2 = in.a0, .a3 = in.a1, .a4 = in.a2, .a5 = in.a3, .a6 = in.a4,
-                    .a7 = in.a5, .a8 = in.a6, .T_ref = in.T_ref, .p_ref = in.p_ref};
+    return Input<N>{.a0 = 0.0,
+                    .a1 = 0.0,
+                    .a2 = in.a0,
+                    .a3 = in.a1,
+                    .a4 = in.a2,
+                    .a5 = in.a3,
+                    .a6 = in.a4,
+                    .a7 = in.a5,
+                    .a8 = in.a6,
+                    .T_ref = in.T_ref,
+                    .p_ref = in.p_ref};
 }
 
 } // namespace
@@ -229,10 +261,24 @@ int main()
         "a0 = a1 = 0 reduces to NASA7"_test = [&] {
             // The NASA-7 inputs from test_nasa7.cpp (N2 and O2, different refs).
             const std::array<ge::Nasa7<2>::SpeciesInput, 2> n7_inputs{{
-                {.a0 = 3.53100528, .a1 = -1.23660988e-4, .a2 = -5.02999433e-7, .a3 = 2.43530612e-9,
-                 .a4 = -1.40881235e-12, .a5 = -1046.97628, .a6 = 2.96747038, .T_ref = 300.0, .p_ref = 1.0e5},
-                {.a0 = 3.78245636, .a1 = -2.99673416e-3, .a2 = 9.84730201e-6, .a3 = -9.68129509e-9,
-                 .a4 = 3.24372837e-12, .a5 = -1063.94356, .a6 = 3.65767573, .T_ref = 320.0, .p_ref = 9.0e4},
+                {.a0 = 3.53100528,
+                 .a1 = -1.23660988e-4,
+                 .a2 = -5.02999433e-7,
+                 .a3 = 2.43530612e-9,
+                 .a4 = -1.40881235e-12,
+                 .a5 = -1046.97628,
+                 .a6 = 2.96747038,
+                 .T_ref = 300.0,
+                 .p_ref = 1.0e5},
+                {.a0 = 3.78245636,
+                 .a1 = -2.99673416e-3,
+                 .a2 = 9.84730201e-6,
+                 .a3 = -9.68129509e-9,
+                 .a4 = 3.24372837e-12,
+                 .a5 = -1063.94356,
+                 .a6 = 3.65767573,
+                 .T_ref = 320.0,
+                 .p_ref = 9.0e4},
             }};
             const std::array<Input<2>, 2> n9_inputs{{as_nasa9<2>(n7_inputs[0]), as_nasa9<2>(n7_inputs[1])}};
 
@@ -240,8 +286,8 @@ int main()
             const ge::Nasa9<2> n9(n9_inputs);
 
             for (const double T : {250.0, 300.0, 410.0, 600.0}) {
-                for (const std::array<double, 2> rho : {std::array{40.0, 70.0}, std::array{5.0, 95.0},
-                                                        std::array{120.0, 30.0}}) {
+                for (const std::array<double, 2> rho :
+                     {std::array{40.0, 70.0}, std::array{5.0, 95.0}, std::array{120.0, 30.0}}) {
                     const double c = rho[0] + rho[1];
                     const std::array<double, 2> x{rho[0] / c, rho[1] / c};
 
@@ -264,10 +310,24 @@ int main()
         // caloric ones through complete EoS pairs at one mixture state.
         "a0 = a1 = 0 reduces to NASA7 (properties)"_test = [&] {
             const std::array<ge::Nasa7<2>::SpeciesInput, 2> n7_inputs{{
-                {.a0 = 3.53100528, .a1 = -1.23660988e-4, .a2 = -5.02999433e-7, .a3 = 2.43530612e-9,
-                 .a4 = -1.40881235e-12, .a5 = -1046.97628, .a6 = 2.96747038, .T_ref = 300.0, .p_ref = 1.0e5},
-                {.a0 = 3.78245636, .a1 = -2.99673416e-3, .a2 = 9.84730201e-6, .a3 = -9.68129509e-9,
-                 .a4 = 3.24372837e-12, .a5 = -1063.94356, .a6 = 3.65767573, .T_ref = 320.0, .p_ref = 9.0e4},
+                {.a0 = 3.53100528,
+                 .a1 = -1.23660988e-4,
+                 .a2 = -5.02999433e-7,
+                 .a3 = 2.43530612e-9,
+                 .a4 = -1.40881235e-12,
+                 .a5 = -1046.97628,
+                 .a6 = 2.96747038,
+                 .T_ref = 300.0,
+                 .p_ref = 1.0e5},
+                {.a0 = 3.78245636,
+                 .a1 = -2.99673416e-3,
+                 .a2 = 9.84730201e-6,
+                 .a3 = -9.68129509e-9,
+                 .a4 = 3.24372837e-12,
+                 .a5 = -1063.94356,
+                 .a6 = 3.65767573,
+                 .T_ref = 320.0,
+                 .p_ref = 9.0e4},
             }};
             const std::array<Input<2>, 2> n9_inputs{{as_nasa9<2>(n7_inputs[0]), as_nasa9<2>(n7_inputs[1])}};
 
