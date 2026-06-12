@@ -13,9 +13,9 @@ namespace glis::eos {
  *
  * @tparam Number Floating-point type the constant is expressed in.
  *
- * Value: `8.314462618`.
+ * Value: `8.31446261815324` (the full CODATA value).
  * Units: **J / (mol K)** (joule per mole per kelvin).
  */
-template<std::floating_point Number = double> inline constexpr Number ideal_gas_constant{8.314462618};
+template<std::floating_point Number = double> inline constexpr Number ideal_gas_constant{8.31446261815324};
 
 } // namespace glis::eos
