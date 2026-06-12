@@ -23,3 +23,5 @@
 #include "eoslab/ideal_models/nasa7.hpp"
 #include "eoslab/ideal_models/nasa9.hpp"
 #include "eoslab/residual_models/no_residual.hpp"
+#include "eoslab/residual_models/peng_robinson.hpp"
+#include "eoslab/residual_models/van_der_waals.hpp"
